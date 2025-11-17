@@ -1,0 +1,63 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools>=77.0.3", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Basic project metadata
+[project]
+name = "fuelsync"
+version = "0.1.0"
+authors = [{ name = "Andrew Jordan", email = "andrewjordan3@gmail.com" }]
+description = "Python tools for interacting with the Wex fuel card SOAP API."
+readme = "README.md"
+requires-python = ">=3.11"
+# Add your project's dependencies here
+# e.g., dependencies = ["requests", "pandas"]
+
+###############################################################################
+# [tool.setuptools] - PACKAGE DISCOVERY
+###############################################################################
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.package-data]
+fuelsync = ["config/config.yaml"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["fuelsync*"]
+exclude = ["tests*", "docs*"]
+
+###############################################################################
+# [tool.ruff] - LINTING AND FORMATTING
+###############################################################################
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+exclude = [".git", "__pycache__", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "UP", # pyupgrade
+    "B",  # flake8-bugbear
+]
+
+ignore = [
+    "E501", # Line too long (handled by ruff format)
+    "E203", # Whitespace before ':' (conflicts with formatter)
+]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <CardManagementEP_transSummaryRequest>
+      <clientId>{{ client_id }}</clientId>
+      <begDate>{{ begDate }}</begDate>
+      <endDate>{{ endDate }}</endDate>
+    </CardManagementEP_transSummaryRequest>
+  </soap:Body>
+</soap:Envelope>

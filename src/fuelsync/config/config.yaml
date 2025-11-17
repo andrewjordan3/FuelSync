@@ -1,0 +1,25 @@
+# ---------------- Config ----------------
+# This section defines the global constants for configuring the client.
+
+# The endpoint URL for the EFS Card Management web service.
+# The user can comment/uncomment the appropriate line to switch
+# between the QA (partner) and Production environments.
+EFS_ENDPOINT_URL: 'https://ws.efsllc.com/axis2/services/CardManagementWS/' # Production
+# EFS_ENDPOINT_URL: "https://ws.partner.efsllc.com/axis2/services/CardManagementWS/" # QA EP
+
+# Your EFS username. Replace 'MY_USERNAME' with your actual credential.
+EFS_USERNAME: 'wsCRYSTAL'
+
+# Your EFS password. Replace 'MY_PASSWORD' with your actual credential.
+EFS_PASSWORD: 'IALgtGe966'
+
+# Define the timeout settings for all 'requests' calls.
+# This is a list where:
+#   - The first value (10) is the 'connect timeout' in seconds (time to establish a connection).
+#   - The second value (30) is the 'read timeout' in seconds (time to wait for the server to send a response).
+REQUEST_TIMEOUT: [10, 30] # (connect, read) seconds
+
+# Controls whether SSL/TLS certificate verification is enabled.
+# Set to true for production and normal QA.
+# Set to false ONLY for temporary local debugging (e.g., with a corporate proxy).
+VERIFY_SSL_CERTIFICATE: true

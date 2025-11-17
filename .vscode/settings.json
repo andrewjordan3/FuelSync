@@ -1,0 +1,110 @@
+{
+    "python.defaultInterpreterPath": "C:\\Users\\AndrewJo\\OneDrive - Heritage-Crystal Clean, LLC\\Documents\\Code\\Other Python\\FuelSync\\.venv\\Scripts\\python.exe",
+    // --- VS Code core hygiene ---
+    "files.autoSave": "afterDelay",
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+    "files.eol": "\n",
+    // General editor settings
+    "editor.rulers": [
+        88
+    ],
+    "editor.formatOnPaste": true,
+    "editor.stickyScroll.enabled": true,
+    "editor.suggest.snippetsPreventQuickSuggestions": false,
+    "editor.bracketPairColorization.enabled": true,
+    "editor.guides.bracketPairs": true,
+    "editor.inlineSuggest.enabled": true,
+    "editor.linkedEditing": true,
+    // --- Pylance / Type checking ---
+    "python.analysis.typeCheckingMode": "strict",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.autoFormatStrings": true,
+    "python.analysis.completeFunctionParens": true,
+    "python.analysis.inlayHints.functionReturnTypes": true,
+    "python.analysis.inlayHints.variableTypes": true,
+    "python.analysis.inlayHints.pytestParameters": true,
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.indexing": true,
+    "python.analysis.useLibraryCodeForTypes": true,
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingTypeStubs": "none",
+        "reportUnknownMemberType": "information",
+        "reportUnknownArgumentType": "information",
+        "reportUnknownVariableType": "information",
+        "reportUnknownParameterType": "information",
+        "reportUnknownLambdaType": "information",
+        "reportUnknownCallableType": "information"
+    },
+    // --- Git ---
+    "git.autofetch": true,
+    "git.confirmSync": false,
+    "git.enableSmartCommit": true,
+    // --- Explorer / Outline ---
+    "outline.collapseItems": "alwaysCollapse",
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+        "*.py": "${capture}.pyi",
+        "pyproject.toml": "poetry.lock, requirements*.txt, setup.py, setup.cfg"
+    },
+    // --- Telemetry (Red Hat XML ext) ---
+    "redhat.telemetry.enabled": true,
+    // --- Language-specific: Python ---
+    "[python]": {
+        // Ruff as the formatter + format on save
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        // Organize imports on save for Python files
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "always", // or "explicit" / "never"
+            "source.fixAll": "explicit"
+        }
+    },
+    // --- Ruff (handles linting AND formatting) ---
+    "ruff.enable": true,
+    "ruff.organizeImports": true,
+    "ruff.fixAll": true,
+    "ruff.format.preview": false,
+    "ruff.lineLength": 88,
+    // --- TOML ---
+    "[toml]": {
+        "editor.defaultFormatter": "tamasfe.even-better-toml",
+        "editor.formatOnSave": true
+    },
+    // --- YAML ---
+    "[yaml]": {
+        "editor.defaultFormatter": "redhat.vscode-yaml",
+        "editor.formatOnSave": true,
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+    },
+    "yaml.format.enable": true,
+    "yaml.validate": true,
+    "yaml.hover": true,
+    "yaml.completion": true,
+    // --- Markdown ---
+    "[markdown]": {
+        "editor.formatOnSave": true,
+        "editor.wordWrap": "on",
+        "editor.quickSuggestions": {
+            "comments": "off",
+            "strings": "off",
+            "other": "off"
+        }
+    },
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python.terminal.activateEnvironment": true,
+    "python-envs.pythonProjects": [],
+    "terminal.integrated.profiles.windows": {
+        "FuelSync PowerShell (venv)": {
+            "source": "PowerShell",
+            "icon": "terminal-powershell",
+            "args": [
+                "-NoExit",
+                "-Command",
+                "& \"${workspaceFolder}\\.venv\\Scripts\\Activate.ps1\""
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "FuelSync PowerShell (venv)"
+}
