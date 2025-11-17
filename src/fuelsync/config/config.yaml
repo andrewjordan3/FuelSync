@@ -8,10 +8,10 @@ EFS_ENDPOINT_URL: 'https://ws.efsllc.com/axis2/services/CardManagementWS/' # Pro
 # EFS_ENDPOINT_URL: "https://ws.partner.efsllc.com/axis2/services/CardManagementWS/" # QA EP
 
 # Your EFS username. Replace 'MY_USERNAME' with your actual credential.
-EFS_USERNAME: 'wsCRYSTAL'
+EFS_USERNAME: ''
 
 # Your EFS password. Replace 'MY_PASSWORD' with your actual credential.
-EFS_PASSWORD: 'IALgtGe966'
+EFS_PASSWORD: ''
 
 # Define the timeout settings for all 'requests' calls.
 # This is a list where:
