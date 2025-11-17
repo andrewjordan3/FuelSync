@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <CardManagementEP_getTranRejects>
+      <clientId>{{ client_id }}</clientId>
+      <startDate>{{ startDate }}</startDate>
+      <endDate>{{ endDate }}</endDate>
+      {% if cardNum is not none %}
+      <cardNum>{{ cardNum }}</cardNum>
+      {% endif %}
+      {% if invoice is not none %}
+      <invoice>{{ invoice }}</invoice>
+      {% endif %}
+      {% if locationId is not none %}
+      <locationId>{{ locationId }}</locationId>
+      {% endif %}
+    </CardManagementEP_getTranRejects>
+  </soap:Body>
+</soap:Envelope>
