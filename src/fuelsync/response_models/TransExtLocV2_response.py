@@ -1,4 +1,4 @@
-# fuelsync/TransExtLocV2_response.py
+# fuelsync/response_models/TransExtLocV2_response.py
 """
 Pydantic models for parsing EFS SOAP API *responses*.
 
@@ -29,6 +29,101 @@ from ..utils import (
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+
+# --- Module-level constants ---
+# Datetime columns for conversion
+datetime_cols: list[str] = ['transaction_date', 'pos_date']
+
+# Define fuel type mapping once at the top of the file, after imports
+FUEL_TYPE_MAP: dict[int, str] = {
+    1: 'Diesel #1',
+    2: 'Diesel #2',
+    4: 'Unleaded Regular',
+    8: 'Unleaded Midgrade',
+    16: 'Unleaded Premium',
+    32: 'Propane',
+    128: 'Marked/Dyed Diesel',
+    256: 'Bio Diesel',
+    512: 'Car Diesel',
+    1024: 'Agricultural Fuel',
+    2048: 'Gasohol',
+    4096: 'Natural Gas',
+    8192: 'ULSD',
+    16384: 'Aviation Fuel',
+    65536: 'Unleaded Card Lock',
+    2097152: 'Furnace Oil',
+    8388608: 'CNG',
+    16777216: 'LNG',
+}
+
+# Info fields we want to extract from the infos array
+INFO_FIELDS: list[str] = [
+    'UNIT',
+    'VHTP',
+    'ODRD',
+    'NAME',
+    'CLCD',
+    'LCCD',
+    'CNTN',
+    'BLID',
+    'DRID',
+    'DMLC',
+]
+
+# Mapping of model field names to DataFrame column names
+TRANSACTION_FIELD_MAP: dict[str, str] = {
+    'transaction_id': 'transaction_id',
+    'transaction_date': 'transaction_date',
+    'pos_date': 'pos_date',
+    'card_number': 'card_number',
+    'invoice': 'invoice',
+    'auth_code': 'auth_code',
+    'ar_number': 'ar_number',
+    'contract_id': 'contract_id',
+    'location_name': 'location_name',
+    'location_city': 'location_city',
+    'location_state': 'location_state',
+    'location_zip': 'location_zip',
+    'location_address': 'location_address',
+    'location_latitude': 'location_latitude',
+    'location_longitude': 'location_longitude',
+    'location_country': 'location_country',
+    'pref_total': 'pref_total',
+    'disc_amount': 'disc_amount',
+    'carrier_fee': 'carrier_fee',
+    'billing_currency': 'billing_currency',
+    'location_currency': 'location_currency',
+    'conversion_rate': 'conversion_rate',
+    'hand_entered': 'hand_entered',
+    'override': 'override',
+    'disc_type': 'disc_type',
+}
+
+INFO_FIELD_MAP: dict[str, str] = {
+    'UNIT': 'unit',
+    'VHTP': 'vehicle_type',
+    'ODRD': 'odometer',
+    'NAME': 'driver_name',
+    'CLCD': 'class_code',
+    'LCCD': 'branch_code',
+    'CNTN': 'gl_code',
+    'BLID': 'business_id',
+    'DRID': 'driver_id',
+    'DMLC': 'region',
+}
+
+LINE_ITEM_FIELD_MAP: dict[str, str] = {
+    'line_number': 'line_number',
+    'category': 'category',
+    'fuel_type': 'fuel_type',
+    'use_type': 'use_type',
+    'quantity': 'quantity',
+    'ppu': 'ppu',
+    'retail_ppu': 'retail_ppu',
+    'amount': 'line_amount',
+    'retail_amount': 'retail_amount',
+    'disc_amount': 'line_disc_amount',
+}
 
 # --- Nested Response Models ---
 
@@ -587,42 +682,103 @@ class GetMCTransExtLocV2Response(BaseModel):
         """
         Convert transactions to a pandas DataFrame for analysis.
 
-        Returns:
-            DataFrame with one row per transaction, containing key fields.
+        Creates one row per line item, with transaction-level data duplicated
+        across line items within the same transaction. This structure is optimized
+        for fuel fraud detection and per-product analysis.
 
-        Raises:
-            ImportError: If pandas is not installed.
+        Returns:
+            DataFrame with one row per line item. Datetime columns are properly
+            typed as pandas datetime. Fuel types are decoded to readable names.
 
         Example:
             >>> response = GetMCTransExtLocV2Response.from_soap_response(xml)
             >>> df = response.to_dataframe()
-            >>> print(df[['transaction_id', 'net_total', 'location_name']])
+            >>> fuel_only = df[df['use_type'] == 1]  # Filter to fuel purchases
+            >>> print(df[['transaction_id', 'unit', 'category', 'quantity']])
         """
-        return pd.DataFrame(
-            [
+        rows: list[dict[str, Any]] = []
+
+        for t in self.transactions:
+            # Build transaction-level data once
+            trans_data: dict[str, Any] = {
+                col_name: getattr(t, field_name)
+                for field_name, col_name in TRANSACTION_FIELD_MAP.items()
+            }
+
+            # Extract info values using list comprehension
+            info_dict: dict[str | None, str | None] = {
+                info.info_type: info.info_value for info in t.infos
+            }
+            trans_data.update(
                 {
-                    'transaction_id': t.transaction_id,
-                    'transaction_date': t.transaction_date,
-                    'transaction_type': t.transaction_type,
-                    'card_number': t.card_number,
-                    'invoice': t.invoice,
-                    'location_id': t.location_id,
-                    'location_name': t.location_name,
-                    'location_city': t.location_city,
-                    'location_state': t.location_state,
-                    'location_address': t.location_address,
-                    'location_latitude': t.location_latitude,
-                    'location_longitude': t.location_longitude,
-                    'net_total': t.net_total,
-                    'funded_total': t.funded_total,
-                    'settle_amount': t.settle_amount,
-                    'disc_amount': t.disc_amount,
-                    'carrier_id': t.carrier_id,
-                    'line_item_count': len(t.line_items),
+                    col_name: info_dict.get(info_type)
+                    for info_type, col_name in INFO_FIELD_MAP.items()
                 }
-                for t in self.transactions
-            ]
-        )
+            )
+
+            # Add line item count
+            trans_data['line_item_count'] = len(t.line_items)
+
+            # If no line items, create single row with None for line item fields
+            if not t.line_items:
+                row: dict[str, Any] = trans_data.copy()
+                row.update(dict.fromkeys(LINE_ITEM_FIELD_MAP.values()))
+                row.update(
+                    {
+                        'fuel_type_name': None,
+                        'fed_tax': None,
+                        'state_fuel_tax': None,
+                        'total_line_tax': None,
+                    }
+                )
+                rows.append(row)
+            else:
+                # Create one row per line item
+                for line_item in t.line_items:
+                    row = trans_data.copy()
+
+                    # Add line item fields
+                    row.update(
+                        {
+                            col_name: getattr(line_item, field_name)
+                            for field_name, col_name in LINE_ITEM_FIELD_MAP.items()
+                        }
+                    )
+
+                    # Extract tax information
+                    fed_tax: float | None = None
+                    state_fuel_tax: float | None = None
+                    total_line_tax: float = 0.0
+
+                    for tax in line_item.line_taxes:
+                        if tax.amount:
+                            total_line_tax += tax.amount
+                        if tax.tax_code == 'FED':
+                            fed_tax = tax.amount
+                        elif tax.tax_code == 'SFTX':
+                            state_fuel_tax = tax.amount
+
+                    row['fed_tax'] = fed_tax
+                    row['state_fuel_tax'] = state_fuel_tax
+                    row['total_line_tax'] = (
+                        total_line_tax if total_line_tax > 0 else None
+                    )
+
+                    rows.append(row)
+
+        # Build DataFrame
+        df = pd.DataFrame(rows)
+
+        # Apply datetime conversion to columns
+        for col in datetime_cols:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col])
+
+        # Apply fuel type name mapping to column
+        if 'fuel_type' in df.columns:
+            df['fuel_type_name'] = df['fuel_type'].map(FUEL_TYPE_MAP)
+
+        return df
 
     @property
     def total_amount(self) -> float:

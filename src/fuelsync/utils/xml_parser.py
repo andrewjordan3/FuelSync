@@ -5,8 +5,9 @@ XML parsing utilities for EFS SOAP responses.
 Provides helper functions for parsing SOAP XML responses with proper
 namespace handling.
 """
+# pyright: reportUnknownMemberType=false, reportAttributeAccessIssue=false, reportUnknownVariableType=false, reportUnknownParameterType=false
 
-from lxml import etree  # type: ignore
+from lxml import etree
 
 
 def parse_soap_response(xml_string: str) -> etree._Element:
