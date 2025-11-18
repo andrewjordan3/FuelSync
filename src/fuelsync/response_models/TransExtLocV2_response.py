@@ -549,7 +549,14 @@ class GetMCTransExtLocV2Response(BaseModel):
         transactions: list[WSMCTransExtLocV2] = []
 
         # Based on the XML structure, the repeating transaction element is <value>
-        result_elements = body.findall('.//value')
+        # First find the result element, then get its direct value children
+        result_element = body.find('.//result')
+        if result_element is None:
+            logger.warning('No <result> element found in the response body.')
+            return cls(transactions=[])
+
+        # Get only the direct children named 'value'
+        result_elements = result_element.findall('./value')
 
         if not result_elements:
             logger.warning('No <value> elements found in the response body.')
