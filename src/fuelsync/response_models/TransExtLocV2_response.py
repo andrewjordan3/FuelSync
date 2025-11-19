@@ -415,6 +415,10 @@ class WSMCTransExtLocV2(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra='ignore')
 
+    # If the API fails to provide a transactionId, the record is corrupt.
+    transaction_id: int = Field(..., alias='transactionId')
+
+    # The rest are optional
     ar_batch_number: int | None = Field(None, alias='ARBatchNumber')
     cpnr_delivery_tp: str | None = Field(None, alias='CPNRDeliveryTP')
     mc_multi_currency: bool | None = Field(None, alias='MCMultiCurrency')
@@ -482,7 +486,6 @@ class WSMCTransExtLocV2(BaseModel):
     terminal_type: str | None = Field(None, alias='terminalType')
     trans_reported: datetime | None = Field(None, alias='transReported')
     transaction_date: datetime | None = Field(None, alias='transactionDate')
-    transaction_id: int | None = Field(None, alias='transactionId')
     transaction_type: int | None = Field(None, alias='transactionType')
     trans_taxes: list[WSTransTaxes] = Field(default_factory=list, alias='transTaxes')
 

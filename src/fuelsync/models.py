@@ -10,7 +10,7 @@ before sending requests.
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from .utils import format_for_soap
 
@@ -67,15 +67,15 @@ class GetMCTransExtLocV2Request(EfsOperationRequest):
     operation_name: str = 'getMCTransExtLocV2'
     template_name: str = 'getMCTransExtLocV2.xml'
 
+    model_config = ConfigDict(populate_by_name=True)
+
     beg_date: datetime = Field(
         ...,
         description='Start date for search (inclusive)',
-        alias='begDate',
     )
     end_date: datetime = Field(
         ...,
         description='End date for search (inclusive)',
-        alias='endDate',
     )
 
     @field_validator('end_date')
@@ -117,15 +117,15 @@ class TransSummaryRequest(EfsOperationRequest):
     operation_name: str = 'transSummaryRequest'
     template_name: str = 'transSummaryRequest.xml'
 
+    model_config = ConfigDict(populate_by_name=True)
+
     beg_date: datetime = Field(
         ...,
         description='Start date for summary (inclusive)',
-        alias='begDate',
     )
     end_date: datetime = Field(
         ...,
         description='End date for summary (inclusive)',
-        alias='endDate',
     )
 
     @field_validator('end_date')
@@ -171,15 +171,15 @@ class WSTranRejectSearch(EfsOperationRequest):
     operation_name: str = 'getTranRejects'
     template_name: str = 'getTranRejects.xml'
 
+    model_config = ConfigDict(populate_by_name=True)
+
     start_date: datetime = Field(
         ...,
         description='Start date for reject search (inclusive)',
-        alias='startDate',
     )
     end_date: datetime = Field(
         ...,
         description='End date for reject search (inclusive)',
-        alias='endDate',
     )
     card_num: str | None = Field(
         None,
@@ -218,7 +218,4 @@ class WSTranRejectSearch(EfsOperationRequest):
             'invoice': self.invoice,
             'locationId': str(self.location_id) if self.location_id else None,
         }
-
-    class Config:
-        populate_by_name = True
 
