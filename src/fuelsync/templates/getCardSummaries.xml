@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <CardManagementEP_getCardSummaries>
+      <clientId>{{ client_id }}</clientId>
+      <request>
+        {%- if type is not none %}
+        <type>{{ type }}</type>
+        {%- endif %}
+        {%- if searchParam is not none %}
+        <searchParam>{{ searchParam }}</searchParam>
+        {%- endif %}
+        {%- if payrUse is not none %}
+        <payrUse>{{ payrUse }}</payrUse>
+        {%- endif %}
+      </request>
+    </CardManagementEP_getCardSummaries>
+  </soap:Body>
+</soap:Envelope>
