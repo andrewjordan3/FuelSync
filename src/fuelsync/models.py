@@ -9,6 +9,7 @@ before sending requests.
 
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
@@ -219,3 +220,122 @@ class WSTranRejectSearch(EfsOperationRequest):
             'locationId': str(self.location_id) if self.location_id else None,
         }
 
+class GetCardSummariesRequest(EfsOperationRequest):
+    """
+    Request model for getCardSummaries operation.
+
+    Returns a list of cards and card data. You can limit the search by type,
+    search parameters, or payroll use fields, or retrieve all card details.
+
+    Args:
+        search_type: The field type to search on (e.g., 'STATUS', 'UNIT', 'NUMBER').
+        search_param: The value to search for within the specified search_type field.
+                      For STATUS searches: 'A' (Active), 'H' (Hold), 'U' (Fraud), 'I' (Inactive).
+        payroll_use: Filter cards by payroll usage type.
+                     'P' = Payroll Only, 'B' = Both payroll and company, 'N' = Company side only.
+
+    Returns:
+        A GetCardSummariesResponse containing a list of matching card summaries.
+
+    Raises:
+        ValidationError: If field validation fails (e.g., invalid search_type or payroll_use).
+        SOAPFault: If the EFS API returns a SOAP fault.
+
+    Example:
+        >>> # Get all active cards
+        >>> request = GetCardSummariesRequest(
+        ...     search_type='STATUS',
+        ...     search_param='A'
+        ... )
+        >>> # Get cards for a specific unit
+        >>> request = GetCardSummariesRequest(
+        ...     search_type='UNIT',
+        ...     search_param='TRUCK001'
+        ... )
+        >>> # Get all cards (no filters)
+        >>> request = GetCardSummariesRequest()
+    """
+
+    operation_name: str = 'getCardSummaries'
+    template_name: str = 'getCardSummaries.xml'
+
+    model_config = ConfigDict(populate_by_name=True, extra='forbid')
+
+    search_type: (
+        Literal[
+            'NUMBER',
+            'XREF',
+            'UNIT',
+            'DRIVERID',
+            'DRIVERNAME',
+            'POLICY',
+            'GPSID',
+            'VIN',
+            'STATUS',
+        ]
+        | None
+    ) = Field(
+        None,
+        alias='type',
+        max_length=10,  # Longest value is 'DRIVERNAME' (10 chars)
+        description='Field type to search on',
+    )
+
+    search_param: str | None = Field(
+        None,
+        alias='searchParam',
+        max_length=24,  # Per API docs, card fields are max 24 chars
+        description='Search value for the specified search_type field',
+    )
+
+    payroll_use: Literal['B', 'P', 'N'] | None = Field(
+        None,
+        alias='payrUse',
+        description='Payroll usage filter: (B)oth, (P)ayroll only, (N)o payroll/company only',
+    )
+
+    @field_validator('search_param')
+    @classmethod
+    def validate_search_param_requires_type(
+        cls, value: str | None, info: ValidationInfo
+    ) -> str | None:
+        """
+        Ensure search_param is only provided when search_type is also specified.
+
+        Args:
+            value: The search_param value being validated.
+            info: Pydantic validation context containing other field values.
+
+        Returns:
+            The validated search_param value.
+
+        Raises:
+            ValueError: If search_param is provided without search_type.
+        """
+        if value is not None and info.data.get('type') is None:
+            raise ValueError(
+                'search_param cannot be provided without specifying search_type'
+            )
+        return value
+
+    def to_soap_format(self) -> dict[str, str | None]:
+        """
+        Convert request fields to SOAP-compliant dictionary format.
+
+        This method maps Python field names to the XML tag names expected by
+        the EFS SOAP API. It only includes fields that have non-None values.
+
+        Returns:
+            Dictionary with SOAP-compatible field names as keys and field values.
+            Keys use the API's expected names (camelCase with 'type', 'searchParam', 'payrUse').
+
+        Example:
+            >>> request = GetCardSummariesRequest(search_type='STATUS', search_param='A')
+            >>> request.to_soap_format()
+            {'type': 'STATUS', 'searchParam': 'A', 'payrUse': None}
+        """
+        return {
+            'type': self.search_type,
+            'searchParam': self.search_param,
+            'payrUse': self.payroll_use,
+        }
