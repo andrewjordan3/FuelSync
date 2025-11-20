@@ -27,10 +27,10 @@ logger: logging.Logger = logging.getLogger(__name__)
 # --- Module-level constants ---
 
 # Valid card status values per EFS API documentation
-VALID_CARD_STATUSES: set[str] = {'Active', 'Hold', 'Fraud', 'Inactive'}
+VALID_CARD_STATUSES: set[str] = {'ACTIVE', 'HOLD', 'FRAUD', 'INACTIVE'}
 
 # Valid payroll status values
-VALID_PAYROLL_STATUSES: set[str] = {'Active', 'Inactive', 'Follows'}
+VALID_PAYROLL_STATUSES: set[str] = {'ACTIVE', 'INACTIVE', 'FOLLOWS'}
 
 # Valid payroll use flags
 VALID_PAYROLL_USE: set[str] = {'B', 'P', 'N'}
@@ -226,7 +226,7 @@ class WSCardSummary(BaseModel):
         Raises:
             ValueError: If status is not in VALID_CARD_STATUSES.
         """
-        if value not in VALID_CARD_STATUSES:
+        if value.upper() not in VALID_CARD_STATUSES:
             logger.warning(
                 f"Unexpected card status '{value}'. "
                 f'Expected one of {VALID_CARD_STATUSES}'
@@ -248,7 +248,7 @@ class WSCardSummary(BaseModel):
         Raises:
             ValueError: If payroll status is not in VALID_PAYROLL_STATUSES.
         """
-        if value not in VALID_PAYROLL_STATUSES:
+        if value.upper() not in VALID_PAYROLL_STATUSES:
             logger.warning(
                 f"Unexpected payroll status '{value}'. "
                 f'Expected one of {VALID_PAYROLL_STATUSES}'
