@@ -99,9 +99,6 @@ class GetMCTransExtLocV2Request(EfsOperationRequest):
             'endDate': format_for_soap(self.end_date),
         }
 
-    class Config:
-        populate_by_name = True
-
 
 class TransSummaryRequest(EfsOperationRequest):
     """
@@ -148,9 +145,6 @@ class TransSummaryRequest(EfsOperationRequest):
             'begDate': format_for_soap(self.beg_date),
             'endDate': format_for_soap(self.end_date),
         }
-
-    class Config:
-        populate_by_name = True
 
 
 class WSTranRejectSearch(EfsOperationRequest):
