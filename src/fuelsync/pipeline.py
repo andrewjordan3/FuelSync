@@ -8,18 +8,18 @@ managing incremental state via Parquet files, and deduplicating records.
 
 import logging
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 from requests import Response
 
+from fuelsync.utils.logger import setup_logger
+
 from .efs_client import EfsClient
 from .models import GetMCTransExtLocV2Request
 from .response_models import GetMCTransExtLocV2Response
-
-# Module-level logger
-logger: logging.Logger = logging.getLogger(__name__)
+from .utils import FuelSyncConfig, load_config
 
 
 class FuelPipeline:
@@ -65,7 +65,13 @@ class FuelPipeline:
                                 the client looks in the default project location.
         """
         self.parquet_file_path: Path = Path(parquet_path)
-        self.client_config_path: Path | None = client_config_path
+
+        # Load configuration immediately upon initialization
+        # This ensures we fail fast if config is missing or invalid, and
+        # prevents reloading it for every batch.
+        self.config: FuelSyncConfig = load_config(client_config_path)
+
+        self.logger: logging.Logger = setup_logger(config=self.config)
 
         # Run State / Configuration
         # These are populated when run_synchronization is called
@@ -87,20 +93,20 @@ class FuelPipeline:
                              Returns None if the file does not exist or is empty.
         """
         if not self.parquet_file_path.exists():
-            logger.debug(
+            self.logger.debug(
                 f'Parquet file not found at {self.parquet_file_path}. Treating as initial run.'
             )
             return None
 
         try:
             # Read only the specific column needed to determine the watermark
-            logger.debug(f'Reading existing data schema from {self.parquet_file_path}')
-            existing_data_date_column: pd.DataFrame = pd.read_parquet(
+            self.logger.debug(f'Reading existing data schema from {self.parquet_file_path}')
+            existing_data_date_column: pd.DataFrame = pd.read_parquet(  # pyright: ignore[reportUnknownMemberType]
                 self.parquet_file_path, columns=['transaction_date']
             )
 
             if existing_data_date_column.empty:
-                logger.debug('Parquet file exists but contains no rows.')
+                self.logger.debug('Parquet file exists but contains no rows.')
                 return None
 
             # Extract the maximum date
@@ -109,7 +115,7 @@ class FuelPipeline:
             ].max()
 
             if pd.isna(max_timestamp):
-                logger.debug('Max date in Parquet file is NaT (Not a Time).')
+                self.logger.debug('Max date in Parquet file is NaT (Not a Time).')
                 return None
 
             # Convert pandas Timestamp to Python datetime and ensure UTC
@@ -118,12 +124,12 @@ class FuelPipeline:
             if latest_datetime.tzinfo is None:
                 latest_datetime = latest_datetime.replace(tzinfo=UTC)
 
-            logger.debug(f'Latest transaction timestamp found: {latest_datetime}')
+            self.logger.debug(f'Latest transaction timestamp found: {latest_datetime}')
             return latest_datetime
 
         except Exception as e:
             # Log warning but do not crash; returning None triggers a full/default load
-            logger.warning(
+            self.logger.warning(
                 f'Failed to read watermark from existing Parquet file: {e}. '
                 f'Pipeline will default to initial start date.'
             )
@@ -132,7 +138,6 @@ class FuelPipeline:
     def _determine_start_timestamp(
         self,
         explicit_start_date: datetime | None,
-        lookback_buffer_days: int,
     ) -> datetime:
         """
         Determine the effective start date for the synchronization window.
@@ -143,7 +148,6 @@ class FuelPipeline:
 
         Args:
             explicit_start_date: Optional user override for start date.
-            lookback_buffer_days: Number of days to overlap if resuming.
 
         Returns:
             datetime: The calculated, timezone-aware (UTC) start timestamp.
@@ -156,17 +160,31 @@ class FuelPipeline:
             )
             if last_known_timestamp:
                 # Resume from history minus buffer
-                start_date = last_known_timestamp - timedelta(days=lookback_buffer_days)
-                logger.info(
+                start_date = last_known_timestamp - timedelta(
+                    days=self.config.pipeline.lookback_days
+                )
+                self.logger.info(
                     f'Resuming incremental sync. '
                     f'Last known data: {last_known_timestamp.date()}. '
-                    f'Lookback buffer: {lookback_buffer_days} days. '
+                    f'Lookback buffer: {self.config.pipeline.lookback_days} days. '
                     f'Effective Start: {start_date.date()}'
                 )
             else:
-                # There are no Wex transactions for us before August 1, 2025
-                start_date = datetime(2025, 8, 1, tzinfo=UTC)
-                logger.info(
+                # Use config for the inception date
+                start_date_str: str = self.config.pipeline.default_start_date
+
+                # Parse ISO string (YYYY-MM-DD) into a date object
+                # This matches the validation logic in config_loader.py
+                inception_date: date = date.fromisoformat(start_date_str)
+
+                # Convert to datetime at midnight UTC
+                # We strictly need a datetime because our SOAP Request models
+                # (GetMCTransExtLocV2Request) define beg_date as datetime.
+                start_date = datetime.combine(
+                    inception_date, datetime.min.time(), tzinfo=UTC
+                )
+
+                self.logger.info(
                     f'No existing history found. Performing initial load from {start_date.date()}'
                 )
 
@@ -216,17 +234,16 @@ class FuelPipeline:
 
         if parsed_response.transaction_count > 0:
             batch_df: pd.DataFrame = parsed_response.to_dataframe()
-            logger.debug(f'  Batch retrieved {len(batch_df)} records.')
+            self.logger.debug(f'  Batch retrieved {len(batch_df)} records.')
             return batch_df
         else:
-            logger.debug('  Batch returned no records.')
+            self.logger.debug('  Batch returned no records.')
             return None
 
     def _fetch_batch_with_retry(
         self,
         batch_start: datetime,
         batch_end: datetime,
-        max_retries: int = 3,
     ) -> pd.DataFrame | None:
         """
         Fetch a batch with automatic retry logic and session recovery.
@@ -244,8 +261,6 @@ class FuelPipeline:
         Args:
             batch_start: The beginning timestamp of the batch window (inclusive).
             batch_end: The ending timestamp of the batch window (inclusive).
-            max_retries: Maximum number of attempts before giving up. Each attempt
-                        gets a fresh client instance. Default is 3 attempts.
 
         Returns:
             pd.DataFrame | None: A DataFrame containing transactions if found, or None
@@ -255,23 +270,26 @@ class FuelPipeline:
             Exception: Re-raises the last exception encountered if all retry attempts
                       are exhausted, which signals the pipeline to abort.
         """
-        logger.debug(f'Processing batch: {batch_start} -> {batch_end}')
+        self.logger.debug(f'Processing batch: {batch_start} -> {batch_end}')
+
+        max_retries: int = self.config.client.max_retries
+        backoff_factor: float = self.config.client.retry_backoff_factor
 
         for attempt in range(max_retries):
             try:
                 # Context manager handles authentication, logout, and cleanup automatically
-                with EfsClient(config_path=self.client_config_path) as client:
+                with EfsClient(config=self.config) as client:
                     return self._fetch_single_batch(client, batch_start, batch_end)
 
             except Exception as e:
-                logger.warning(
+                self.logger.warning(
                     f'Error fetching batch {batch_start} '
                     f'(Attempt {attempt + 1}/{max_retries}): {e}'
                 )
 
                 # Check if we've exhausted all retry attempts
                 if attempt == max_retries - 1:
-                    logger.error(
+                    self.logger.error(
                         f'Max retries exceeded for batch starting {batch_start}. '
                         f'Aborting pipeline.'
                     )
@@ -279,8 +297,8 @@ class FuelPipeline:
 
                 # Exponential backoff: wait progressively longer between retries
                 # (1s, 2s, 4s for default max_retries=3)
-                sleep_seconds: int = 2**attempt
-                logger.info(
+                sleep_seconds: float = backoff_factor**attempt
+                self.logger.info(
                     f'Backing off for {sleep_seconds} seconds before '
                     f'retrying with fresh session...'
                 )
@@ -294,8 +312,6 @@ class FuelPipeline:
         self,
         start_timestamp: datetime,
         end_timestamp: datetime,
-        batch_size_days: int,
-        request_delay_seconds: float,
     ) -> list[pd.DataFrame]:
         """
         Execute the batch extraction loop with retry logic and session recovery.
@@ -314,10 +330,6 @@ class FuelPipeline:
         Args:
             start_timestamp: The beginning of the total window (inclusive).
             end_timestamp: The end of the total window (inclusive).
-            batch_size_days: Size of each chunk in days. Smaller batches reduce
-                           memory pressure and prevent SOAP timeouts.
-            request_delay_seconds: Time to sleep between successful requests to
-                                 respect API rate limits.
 
         Returns:
             list[pd.DataFrame]: A list of DataFrames, one for each batch that returned
@@ -331,11 +343,14 @@ class FuelPipeline:
         downloaded_dataframes: list[pd.DataFrame] = []
         batch_start_cursor: datetime = start_timestamp
 
+        delay_seconds: float = self.config.pipeline.request_delay_seconds
+
         while batch_start_cursor < end_timestamp:
             # Calculate batch end, clamping to the total end timestamp to avoid
             # requesting data beyond the intended window
             batch_end_cursor: datetime = min(
-                batch_start_cursor + timedelta(days=batch_size_days),
+                batch_start_cursor
+                + timedelta(days=self.config.pipeline.batch_size_days),
                 end_timestamp,
             )
 
@@ -349,8 +364,8 @@ class FuelPipeline:
                 downloaded_dataframes.append(batch_df)
 
             # Apply rate limiting between batches to be a good API citizen
-            if request_delay_seconds > 0:
-                time.sleep(request_delay_seconds)
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
 
             # Advance the cursor for the next batch
             batch_start_cursor = batch_end_cursor
@@ -372,25 +387,25 @@ class FuelPipeline:
             new_dataframes: List of DataFrames downloaded from the API.
         """
         if not new_dataframes:
-            logger.info('Pipeline run finished. No new data found.')
+            self.logger.info('Pipeline run finished. No new data found.')
             return
 
-        logger.debug('Consolidating downloaded batches...')
+        self.logger.debug('Consolidating downloaded batches...')
         newly_retrieved_data: pd.DataFrame = pd.concat(
             new_dataframes, ignore_index=True
         )
 
         # Load history if it exists
         if self.parquet_file_path.exists():
-            logger.debug(
+            self.logger.debug(
                 f'Loading existing historical data from {self.parquet_file_path}'
             )
-            historical_data: pd.DataFrame = pd.read_parquet(self.parquet_file_path)
+            historical_data: pd.DataFrame = pd.read_parquet(self.parquet_file_path)  # pyright: ignore[reportUnknownMemberType]
             final_dataset: pd.DataFrame = pd.concat(
                 [historical_data, newly_retrieved_data], ignore_index=True
             )
         else:
-            logger.debug(
+            self.logger.debug(
                 'No history file found. Creating new dataset from retrieved data.'
             )
             final_dataset = newly_retrieved_data
@@ -411,34 +426,33 @@ class FuelPipeline:
         row_count_after: int = len(final_dataset)
         duplicates_removed: int = row_count_before - row_count_after
 
-        logger.debug(
+        self.logger.debug(
             f'Deduplication complete. Removed {duplicates_removed} duplicate records.'
         )
 
         # Save to disk (or skip if dry run)
         if dry_run:
-            logger.info(
+            self.logger.info(
                 f'[DRY RUN] Would have saved {row_count_after} total records '
                 f'to {self.parquet_file_path}. Skipping write operation.'
             )
         else:
-            logger.info(
+            self.logger.info(
                 f'Saving synchronized dataset ({row_count_after} total records) '
                 f'to {self.parquet_file_path}'
             )
             self.parquet_file_path.parent.mkdir(parents=True, exist_ok=True)
             final_dataset.to_parquet(
-                self.parquet_file_path, index=False, compression='snappy'
+                self.parquet_file_path,
+                index=False,
+                compression=self.config.storage.compression,
             )
 
     def run_synchronization(
         self,
         explicit_start_date: datetime | None = None,
         explicit_end_date: datetime | None = None,
-        lookback_buffer_days: int = 7,
-        batch_size_days: int = 1,
         dry_run: bool = False,
-        request_delay_seconds: float = 0.0,
     ) -> None:
         """
         Execute the main synchronization workflow.
@@ -451,26 +465,18 @@ class FuelPipeline:
                                  date, ignoring existing data.
             explicit_end_date: If provided, stops downloading at this date.
                                Defaults to the current UTC time.
-            lookback_buffer_days: Number of days to overlap with existing data.
-                                  This catches transactions that were posted late
-                                  by vendors. Default is 7 days.
-            batch_size_days: The duration of each API call window. Kept small (1 day)
-                             to ensure SOAP responses remain manageable in size.
             dry_run: If True, performs all operations EXCEPT saving the Parquet file.
-            request_delay_seconds: Time to wait between API requests (rate limiting).
         """
-        logger.info(
+        self.logger.info(
             f'Starting EFS transaction synchronization pipeline (Dry Run: {dry_run}).'
         )
 
         # 1. Determine Time Window
         end_timestamp: datetime = explicit_end_date or datetime.now(UTC)
-        start_timestamp: datetime = self._determine_start_timestamp(
-            explicit_start_date, lookback_buffer_days
-        )
+        start_timestamp: datetime = self._determine_start_timestamp(explicit_start_date)
 
         if start_timestamp >= end_timestamp:
-            logger.info(
+            self.logger.info(
                 'Start date is in the future or after end date. No synchronization needed.'
             )
             return
@@ -479,11 +485,9 @@ class FuelPipeline:
         downloaded_data: list[pd.DataFrame] = self._fetch_batches(
             start_timestamp,
             end_timestamp,
-            batch_size_days,
-            request_delay_seconds,
         )
 
         # 3. Process and Persist (Transform & Load)
         self._merge_deduplicate_and_save(downloaded_data, dry_run)
 
-        logger.info('Pipeline synchronization completed successfully.')
+        self.logger.info('Pipeline synchronization completed successfully.')

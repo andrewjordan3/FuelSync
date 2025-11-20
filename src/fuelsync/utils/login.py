@@ -1,7 +1,4 @@
 # fuelsync/utils/login.py
-import truststore
-
-truststore.inject_into_ssl()
 
 import html
 import logging
@@ -9,13 +6,13 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-from .config_loader import EfsConfig
+from .config_loader import FuelSyncConfig
 
 # Set up a logger for this module
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-def login_to_efs(config: EfsConfig) -> str:
+def login_to_efs(config: FuelSyncConfig) -> str:
     """
     Authenticates with the EFS SOAP API and retrieves a session token.
 
@@ -34,7 +31,7 @@ def login_to_efs(config: EfsConfig) -> str:
         and SOAPAction header.
 
     Args:
-        config: A validated EfsConfig object containing:
+        config: A validated FuelSyncConfig object containing:
             - EFS API endpoint URL
             - Username and password credentials
             - SSL verification settings
@@ -52,7 +49,7 @@ def login_to_efs(config: EfsConfig) -> str:
             (invalid credentials, missing token in response, etc.).
 
     Example:
-        >>> config = EfsConfig(...)
+        >>> config = FuelSyncConfig(...)
         >>> session_token = login_to_efs(config)
         >>> # Use session_token in subsequent API calls
     """
@@ -82,8 +79,8 @@ def login_to_efs(config: EfsConfig) -> str:
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
     <CardManagementEP_login>
-      <user>{html.escape(config.efs_username)}</user>
-      <password>{html.escape(config.efs_password.get_secret_value())}</password>
+      <user>{html.escape(config.efs.username)}</user>
+      <password>{html.escape(config.efs.password.get_secret_value())}</password>
     </CardManagementEP_login>
   </soap:Body>
 </soap:Envelope>"""
@@ -95,12 +92,12 @@ def login_to_efs(config: EfsConfig) -> str:
     # We must encode the string payload to bytes using UTF-8, matching
     # the encoding declared in both the Content-Type header and XML prolog.
     soap_response: requests.Response = requests.post(
-        str(config.efs_endpoint_url),
+        str(config.efs.endpoint_url),
         data=soap_login_request_body.encode('utf-8'),
         headers=soap_request_headers,
-        timeout=config.request_timeout,
+        timeout=config.client.request_timeout,
         # verify controls SSL certificate validation (important for security)
-        verify=config.verify_ssl_certificate,
+        verify=config.client.verify_ssl,
     )
 
     # ========================================================================

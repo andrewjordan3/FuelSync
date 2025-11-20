@@ -7,13 +7,15 @@ and output across all modules in the package.
 """
 
 import logging
+import sys
 from pathlib import Path
-from sys import stdout
+
+from .config_loader import FuelSyncConfig
 
 
 def setup_logger(
     logging_level: int = logging.INFO,
-    log_file_path: Path | None = None,
+    config: FuelSyncConfig | None = None,
 ) -> logging.Logger:
     """
     Set up logging for the fuelsync package.
@@ -22,41 +24,37 @@ def setup_logger(
     inherit the same log level and handler configuration. This ensures
     consistent logging throughout the package.
 
-    The function is idempotent - calling it multiple times will update
-    the existing configuration rather than adding duplicate handlers.
+    The function is idempotent - calling it multiple times will completely
+    reset and reconfigure the handlers based on the provided arguments.
 
     Args:
-        logging_level: The logging level to use (e.g., logging.DEBUG,
-                      logging.INFO, logging.WARNING). Defaults to INFO.
-        log_file_path: Optional path to a log file. If provided, logs will
-                      be written to this file. If None, logs will be written
-                      to stdout (console).
+        logging_level: Default logging level (e.g., logging.INFO) to use for
+                      the console if NO config object is provided.
+        config: Optional validated configuration object. If provided:
+                - Console logging uses config.logging.console_level
+                - File logging is enabled if config.logging.file_path is set
+                - The 'logging_level' argument is ignored.
 
     Returns:
         Logger instance for the calling module (via __name__).
 
     Example:
-        >>> # Log to console at INFO level (default)
+        >>> # Simple console logging (default INFO)
         >>> logger = setup_logger()
-        >>>
-        >>> # Log to console at DEBUG level
+
+        >>> # Simple console logging (DEBUG)
         >>> logger = setup_logger(logging_level=logging.DEBUG)
-        >>>
-        >>> # Log to file at INFO level
-        >>> logger = setup_logger(log_file_path=Path('fuelsync.log'))
-        >>>
-        >>> # Log to file at DEBUG level
-        >>> logger = setup_logger(
-        ...     logging_level=logging.DEBUG,
-        ...     log_file_path=Path('fuelsync_debug.log')
-        ... )
+
+        >>> # Full config (Console + File)
+        >>> config = load_config()
+        >>> logger = setup_logger(config=config)
     """
     # Get the package-level logger (parent of all module loggers)
     package_logger: logging.Logger = logging.getLogger('fuelsync')
 
-    # Set the log level on the package logger
-    # This will apply to all child loggers (e.g., fuelsync.efs_client, fuelsync.utils.login)
-    package_logger.setLevel(logging_level)
+    # Clear existing handlers to allow reconfiguration/idempotency
+    # This prevents duplicate logs if setup_logger is called multiple times
+    package_logger.handlers.clear()
 
     # Define consistent log format for all handlers
     log_format: logging.Formatter = logging.Formatter(
@@ -64,38 +62,55 @@ def setup_logger(
         datefmt='%Y-%m-%d %H:%M:%S',
     )
 
-    # Only add a handler if one doesn't already exist
-    # This prevents duplicate log messages when setup_logger is called multiple times
-    if not package_logger.handlers:
-        # Create appropriate handler based on whether a log file was specified
-        if log_file_path is not None:
-            # Ensure parent directory exists
-            log_file_path.parent.mkdir(parents=True, exist_ok=True)
-
-            handler: logging.Handler = logging.FileHandler(
-                filename=str(log_file_path),
-                mode='a',  # Append mode
-                encoding='utf-8',
-            )
-            logging.info(f'Logging to file: {log_file_path}')
-        else:
-            # Log to stdout (console)
-            handler: logging.Handler = logging.StreamHandler(stdout)
-
-        # Apply formatter to handler
-        handler.setFormatter(log_format)
-        handler.setLevel(logging_level)
-
-        # Add handler to package logger
-        package_logger.addHandler(handler)
-
+    # --- 1. Configure Console Handler ---
+    # Determine console level: Config priority > Argument fallback
+    if config:
+        console_level: int = config.logging.get_console_level_int()
     else:
-        # Handler already exists - update its level to match new configuration
-        # This handles the case where setup_logger is called multiple times
-        # with different log levels
-        for existing_handler in package_logger.handlers:
-            existing_handler.setLevel(logging_level)
+        console_level = logging_level
+
+    console_handler: logging.Handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(log_format)
+    console_handler.setLevel(console_level)
+    package_logger.addHandler(console_handler)
+
+    # --- 2. Configure File Handler (Config Only) ---
+    file_level: int | None = None
+
+    if config and config.logging.file_path and config.logging.get_file_level_int():
+        log_file_path: Path = config.logging.file_path
+        file_level = config.logging.get_file_level_int()
+
+        # Ensure parent directory exists
+        log_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        file_handler: logging.FileHandler = logging.FileHandler(
+            filename=str(log_file_path),
+            mode='a',  # Append mode
+            encoding='utf-8',
+        )
+        file_handler.setFormatter(log_format)
+        # We know file_level is int because of the check above, but type checker
+        # might need help or we rely on runtime correctness from Pydantic
+        if file_level is not None:
+            file_handler.setLevel(file_level)
+
+        package_logger.addHandler(file_handler)
+
+        # Log the location of the log file to the console for visibility
+        # We use a direct print or a temporary log to ensure it's seen
+        # logging.info might not show up if console_level is WARNING
+        if console_level <= logging.INFO:
+            print(f'Logging to file: {log_file_path}', file=sys.stderr)
+
+    # --- 3. Set Package Logger Level ---
+    # The logger's level must be the lowest (most verbose) of all its handlers.
+    # If the logger is set to INFO, a DEBUG handler will never receive messages.
+    effective_level: int = console_level
+    if file_level is not None:
+        effective_level = min(console_level, file_level)
+
+    package_logger.setLevel(effective_level)
 
     # Return a module-specific logger for the caller
-    # This uses __name__ from the calling module, not from this logger.py module
     return logging.getLogger(__name__)

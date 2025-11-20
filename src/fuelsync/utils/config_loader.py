@@ -2,244 +2,542 @@
 """
 EFS Configuration Loader with Pydantic Validation
 
-This module loads and validates configuration from YAML files using Pydantic
+This module loads and validates configuration from a YAML file using Pydantic
 for strong type checking and validation. It ensures that all required
 configuration values are present and properly formatted before the application
 attempts to use them.
+
+Key Design Decisions:
+- Pydantic models mirror the exact structure of config.yaml for maintainability
+- Validation occurs at load time to fail fast if config is malformed
+- Sensitive values (passwords) use SecretStr to prevent accidental logging
+- Log levels support both string names ("DEBUG") and numeric values (10)
+- File logging is optional; console logging is always enabled
 """
 
 import logging
+from datetime import date
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, HttpUrl, SecretStr, ValidationError
-from pydantic_core import InitErrorDetails
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 # Set up a logger for this module
 logger: logging.Logger = logging.getLogger(__name__)
 
+# =============================================================================
+# Type Aliases for Clarity
+# =============================================================================
 
-class EfsConfig(BaseModel):
+# Valid logging level names recognized by Python's logging module
+LogLevelName = Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+
+# Valid compression algorithms supported by pandas.to_parquet()
+CompressionType = Literal['snappy', 'gzip', 'brotli', 'lz4', 'zstd'] | None
+
+# =============================================================================
+# Configuration Models (Schema)
+# =============================================================================
+# These models mirror the structure of config.yaml exactly.
+# Each field includes validation rules to catch configuration errors early.
+
+class EfsSection(BaseModel):
     """
-    Pydantic model for validating EFS API configuration.
+    Schema for the 'efs' section of config.yaml.
 
-    This model defines the expected structure and types for the configuration
-    file. Pydantic automatically validates all values against the specified
-    types and constraints when the configuration is loaded.
+    Validates API endpoint and authentication credentials for the EFS SOAP service.
 
-    Field Aliases:
-        The 'alias' parameter maps YAML keys (typically UPPER_CASE by convention)
-        to Python-friendly snake_case attribute names. This allows the config
-        file to follow YAML conventions while the code follows Python conventions.
-
-    Attributes:
-        efs_endpoint_url: The SOAP API endpoint URL. Must be a valid HTTP/HTTPS URL.
-        efs_username: The username for API authentication.
-        efs_password: The password for API authentication. Stored as SecretStr
-                     to prevent accidental logging or printing of sensitive data.
-        request_timeout: Timeout for API requests in seconds. Can be either:
-                        - A single number (applied to both connect and read)
-                        - A tuple of (connect_timeout, read_timeout)
-        verify_ssl_certificate: Whether to verify SSL certificates. Should be
-                               True in production, but can be False for testing
-                               against self-signed certificates.
+    Security Notes:
+    - SecretStr prevents passwords from appearing in logs or string representations
+    - In production, consider loading credentials from environment variables or
+      a secrets manager (AWS Secrets Manager, Azure Key Vault, etc.)
     """
-
-    # Use HttpUrl for strong URL validation (ensures proper format and scheme)
-    efs_endpoint_url: HttpUrl = Field(..., alias='EFS_ENDPOINT_URL')
-
-    # Username for API authentication
-    efs_username: str = Field(..., alias='EFS_USERNAME')
-
-    # Use SecretStr to ensure the password isn't accidentally logged
-    # or printed in plain text. Access the actual value with .get_secret_value()
-    efs_password: SecretStr = Field(..., alias='EFS_PASSWORD')
-
-    # Timeout can be a single value or a tuple of (connect, read) timeouts.
-    # Using int | tuple allows flexibility for different timeout strategies.
-    request_timeout: int | tuple[int, int] = Field(..., alias='REQUEST_TIMEOUT')
-
-    # SSL certificate verification flag
-    verify_ssl_certificate: bool = Field(..., alias='VERIFY_SSL_CERTIFICATE')
-
-    class Config:
-        """
-        Pydantic model configuration.
-
-        populate_by_name allows the model to accept both the alias names
-        (e.g., 'EFS_ENDPOINT_URL') and the attribute names (e.g., 'efs_endpoint_url').
-        This provides flexibility in how the configuration is constructed.
-        """
-
-        populate_by_name = True
-
-
-def _find_project_root() -> Path:
-    """
-    Find the project root by walking up the directory tree.
-
-    Starting from this file's location, walk up the directory tree until
-    we find a directory named 'fuelsync'. This is the project root where
-    the config directory should be located.
-
-    This approach is more robust than using relative paths because it works
-    regardless of:
-    - The current working directory
-    - Where the package is installed
-    - How the module is imported
-
-    Returns:
-        The path to the 'fuelsync' project root directory.
-
-    Raises:
-        FileNotFoundError: If no 'fuelsync' directory is found in the
-                          directory tree (shouldn't happen in normal use).
-    """
-    # Start from this file's directory
-    current_path: Path = Path(__file__).parent.resolve()
-
-    logger.debug(f'Searching for project root starting from: {current_path}')
-
-    # Walk up the directory tree looking for 'fuelsync'
-    for parent_dir in [current_path, *current_path.parents]:
-        logger.debug(f'Checking directory: {parent_dir}')
-
-        if parent_dir.name == 'fuelsync':
-            logger.debug(f'Found project root at: {parent_dir}')
-            return parent_dir
-
-    # If we get here, we couldn't find the project root
-    error_message: str = (
-        f'Could not find "fuelsync" directory in path hierarchy starting '
-        f'from {current_path}. This may indicate an installation problem.'
+    model_config = ConfigDict(extra='forbid')
+    endpoint_url: HttpUrl = Field(
+        ...,
+        description='Full URL to the EFS SOAP API endpoint. Must use HTTPS in production.',
     )
-    logger.error(error_message)
-    raise FileNotFoundError(error_message)
+
+    username: str = Field(
+        ...,
+        min_length=1,
+        description='EFS API username. Must not be empty.',
+    )
+
+    password: SecretStr = Field(
+        ...,
+        description='EFS API password. Stored as SecretStr to prevent accidental exposure.',
+    )
+
+    @field_validator('password')
+    @classmethod
+    def password_not_empty(cls, v: SecretStr) -> SecretStr:
+        """
+        Ensure the password is not an empty string.
+
+        Pydantic's SecretStr wraps the actual string value, so we need to
+        access .get_secret_value() to inspect the actual content.
+        """
+        if not v.get_secret_value():
+            raise ValueError('Password cannot be empty')
+        return v
+
+
+class ClientSection(BaseModel):
+    """
+    Schema for the 'client' section of config.yaml.
+
+    Controls HTTP client behavior including timeouts, SSL verification, and retry logic.
+    These settings directly impact reliability and performance when communicating with
+    the EFS SOAP API.
+    """
+    model_config = ConfigDict(extra='forbid')
+    request_timeout: tuple[float, float] = Field(
+        default=(10.0, 30.0),
+        description='HTTP timeouts in seconds: [connect_timeout, read_timeout]. '
+        'Connect timeout is how long to wait for the server to accept the connection. '
+        'Read timeout is how long to wait for the server to send response data.',
+    )
+
+    verify_ssl: bool = Field(
+        default=True,
+        description='Whether to verify SSL certificates. Should ALWAYS be True in production. '
+        'Only set to False when debugging local SSL interception (e.g., ZScaler).',
+    )
+
+    max_retries: int = Field(
+        default=3,
+        ge=0,
+        description='Maximum number of retry attempts for failed HTTP requests.',
+    )
+
+    retry_backoff_factor: float = Field(
+        default=2.0,
+        gt=0.0,
+        description='Exponential backoff multiplier. Wait time = backoff_factor ^ attempt.',
+    )
+
+    @field_validator('request_timeout')
+    @classmethod
+    def validate_timeout_values(cls, v: tuple[float, float]) -> tuple[float, float]:
+        """
+        Validate that timeout values are positive and connect timeout is less than read timeout.
+
+        The connect timeout should always be shorter than the read timeout because:
+        1. Connection establishment should be quick (typically < 5 seconds)
+        2. Reading response data can take much longer, especially for large datasets
+        """
+        connect_timeout: float
+        read_timeout: float
+        connect_timeout, read_timeout = v
+
+        if connect_timeout <= 0:
+            raise ValueError(f'Connect timeout must be positive, got {connect_timeout}')
+
+        if read_timeout <= 0:
+            raise ValueError(f'Read timeout must be positive, got {read_timeout}')
+
+        if connect_timeout > read_timeout:
+            raise ValueError(
+                f'Connect timeout ({connect_timeout}s) should not exceed '
+                f'read timeout ({read_timeout}s)'
+            )
+
+        return v
+
+
+class PipelineSection(BaseModel):
+    """
+    Schema for the 'pipeline' section of config.yaml.
+
+    Defines the operational parameters for the incremental data synchronization pipeline.
+    These settings control how the pipeline chunks time windows, handles late-arriving
+    data, and manages API rate limits.
+    """
+    model_config = ConfigDict(extra='forbid')
+    default_start_date: str = Field(
+        ...,
+        description='ISO format date string (YYYY-MM-DD) representing the earliest date '
+        'to query if no local history exists. This should be the inception date '
+        'of the fuel card program.',
+    )
+
+    batch_size_days: int = Field(
+        default=1,
+        ge=1,
+        description='Number of days to include in each API request batch. '
+        'Keep this value small (1-7 days) to prevent SOAP response timeouts '
+        'and excessive memory consumption during XML parsing.',
+    )
+
+    lookback_days: int = Field(
+        default=7,
+        ge=0,
+        description='Number of days to overlap with existing data when resuming. '
+        'This captures transactions that vendors posted late. For example, '
+        'a transaction from Monday might not appear in the API until Thursday.',
+    )
+
+    request_delay_seconds: float = Field(
+        default=0.5,
+        ge=0.0,
+        description='Time to wait between API requests (rate limiting). '
+        'Helps prevent overwhelming the EFS API and being throttled or blocked.',
+    )
+
+    @field_validator('default_start_date')
+    @classmethod
+    def validate_date_format(cls, v: str) -> str:
+        """
+        Validate that the date string is in ISO format (YYYY-MM-DD).
+
+        We could convert this to a datetime.date object here, but keeping it as a
+        string allows the pipeline to handle the conversion with its own timezone
+        logic (UTC, local, etc.).
+        """
+        try:
+            date.fromisoformat(v)
+        except ValueError as e:
+            raise ValueError(
+                f'default_start_date must be in YYYY-MM-DD format, got "{v}"'
+            ) from e
+
+        return v
+
+
+class StorageSection(BaseModel):
+    """
+    Schema for the 'storage' section of config.yaml.
+
+    Configures the local Parquet file that serves as the persistent data store
+    for synchronized transactions. Parquet was chosen for:
+    - Excellent compression (smaller file sizes)
+    - Fast columnar read performance (for analytics)
+    - Native datetime support (no string conversion needed)
+    """
+    model_config = ConfigDict(extra='forbid')
+    parquet_file: Path = Field(
+        ...,
+        description='Local filesystem path where transaction data is stored. '
+        'Can be absolute or relative. If relative, it resolves from the '
+        'current working directory where the pipeline is executed.',
+    )
+
+    compression: CompressionType = Field(
+        default='snappy',
+        description='Compression algorithm for the Parquet file. '
+        'Snappy provides good compression with fast read/write speeds. '
+        'Gzip offers better compression but is slower. '
+        'Brotli offers the best compression but is the slowest.',
+    )
+
+
+class LoggingSection(BaseModel):
+    """
+    Schema for the 'logging' section of config.yaml.
+
+    Configures application logging behavior. Supports dual-destination logging:
+    1. Console (stdout/stderr) - Always enabled, typically INFO level
+    2. File (optional) - Detailed logs for troubleshooting, typically DEBUG level
+
+    Log Levels (from least to most verbose):
+    - CRITICAL (50): Severe errors causing application shutdown
+    - ERROR (40): Serious problems that prevent specific operations
+    - WARNING (30): Warning messages for potentially problematic situations
+    - INFO (20): General informational messages about program execution
+    - DEBUG (10): Detailed diagnostic information useful for debugging
+
+    Location Convention:
+    - For user-facing tools: Save logs in current working directory or project root
+    - For system services: Use /var/log or /var/log/<app_name>/
+    - For development: Often in project root or a dedicated logs/ folder
+
+    This implementation uses relative paths by default, which resolve from wherever
+    the user executes the pipeline command. If you want logs in a specific location
+    regardless of execution context, use an absolute path.
+    """
+    model_config = ConfigDict(extra='forbid')
+    console_level: LogLevelName | int = Field(
+        default='INFO',
+        description='Logging level for console output. Accepts either a string name '
+        '(DEBUG, INFO, WARNING, ERROR, CRITICAL) or an integer (10, 20, 30, 40, 50).',
+    )
+
+    file_path: Path | None = Field(
+        default=None,
+        description='Optional path to a log file. If provided, logs will be written to '
+        'this file in addition to console output. If None, file logging is disabled.',
+    )
+
+    file_level: LogLevelName | int | None = Field(
+        default=None,
+        description='Logging level for file output. Only relevant if file_path is provided. '
+        'Accepts either a string name or an integer.',
+    )
+
+    @field_validator('console_level', 'file_level')
+    @classmethod
+    def validate_log_level(
+        cls, v: LogLevelName | int | None
+    ) -> LogLevelName | int | None:
+        """
+        Validate that log levels are either valid string names or valid numeric values.
+
+        Python's logging module uses these numeric values internally:
+        - DEBUG: 10
+        - INFO: 20
+        - WARNING: 30
+        - ERROR: 40
+        - CRITICAL: 50
+
+        We accept both formats and validate them here.
+        """
+        if v is None:
+            return v
+
+        # If it's a string, Pydantic's Literal type already validated it's one of the allowed names
+        if isinstance(v, str):
+            return v
+
+        # Not None or str, so must be integer, validate it's a standard logging level
+        valid_levels: set[int] = {10, 20, 30, 40, 50}
+        if v not in valid_levels:
+            raise ValueError(
+                f'Numeric log level must be one of {valid_levels}, got {v}'
+            )
+        return v
+
+    @model_validator(mode='after')
+    def validate_file_logging_consistency(self) -> 'LoggingSection':
+        """
+        Ensure that if file_path is provided, file_level is also provided, and vice versa.
+
+        This prevents misconfiguration where someone enables file logging but doesn't
+        specify what level to log at (or vice versa).
+
+        Model validators run after all field validators, so we can safely access
+        multiple fields at once.
+        """
+        has_file_path: bool = self.file_path is not None
+        has_file_level: bool = self.file_level is not None
+
+        if has_file_path and not has_file_level:
+            # Default to DEBUG if path is provided but level is missing
+            self.file_level = 'DEBUG'
+            logger.warning(
+                'file_path provided without file_level. Defaulting to DEBUG for file logging.'
+            )
+
+        if has_file_level and not has_file_path:
+            raise ValueError(
+                'file_level is specified but file_path is missing. '
+                'Both must be provided to enable file logging.'
+            )
+
+        return self
+
+    def get_console_level_int(self) -> int:
+        """
+        Convert console_level to the integer value used by Python's logging module.
+
+        Returns:
+            The integer logging level (10, 20, 30, 40, or 50)
+        """
+        if isinstance(self.console_level, int):
+            return self.console_level
+        return getattr(logging, self.console_level)
+
+    def get_file_level_int(self) -> int | None:
+        """
+        Convert file_level to the integer value used by Python's logging module.
+
+        Returns:
+            The integer logging level, or None if file logging is disabled
+        """
+        if self.file_level is None:
+            return None
+        if isinstance(self.file_level, int):
+            return self.file_level
+        return getattr(logging, self.file_level)
+
+
+class FuelSyncConfig(BaseModel):
+    """
+    Root configuration model.
+
+    Aggregates all configuration sections into a single, validated object.
+    This is the primary interface for accessing configuration throughout the application.
+
+    Usage:
+        config = load_config()
+        endpoint = config.efs.endpoint_url
+        timeout = config.client.request_timeout
+        log_level = config.logging.get_console_level_int()
+    """
+    model_config = ConfigDict(extra='forbid')
+    efs: EfsSection
+    client: ClientSection
+    pipeline: PipelineSection
+    storage: StorageSection
+    logging: LoggingSection
+
+
+# =============================================================================
+# Loader Logic
+# =============================================================================
 
 
 def _get_default_config_path() -> Path:
     """
-    Get the default configuration file path.
+    Resolve the absolute path to the default config.yaml file.
 
-    This function locates the config file by:
-    1. Finding the project root (the 'fuelsync' directory)
-    2. Appending the config subdirectory and filename
+    Strategy: Use __file__ to anchor to this module's location, then navigate
+    the known directory structure to reach the config file.
+
+    Directory Structure:
+        FuelSync/
+        └── src/
+            └── fuelsync/
+                ├── config/
+                │   └── config.yaml       <-- Target file
+                └── utils/
+                    └── config_loader.py  <-- This file
+
+    Why use __file__ instead of hardcoding?
+    ========================================
+    Using __file__ makes this code robust across different environments:
+
+    1. Development: Works when running from project root or any subdirectory
+    2. Installed Package: Works when installed via pip (editable or regular)
+    3. Packaged Distribution: Works when bundled as a wheel or source distribution
+    4. Testing: Works regardless of where tests are executed from
+
+    The __file__ approach eliminates all these issues by calculating the path
+    dynamically based on where the Python module is actually located at runtime.
 
     Returns:
-        The path to the default config.yaml file.
-
-    Raises:
-        FileNotFoundError: If the project root cannot be found.
+        Absolute path to config.yaml
     """
-    project_root: Path = _find_project_root()
-    config_path: Path = project_root / 'config' / 'config.yaml'
+    # Get the absolute path to this file (config_loader.py)
+    current_file: Path = Path(__file__).resolve()
 
-    logger.debug(f'Default config path resolved to: {config_path}')
+    # Navigate up two levels: utils/ -> fuelsync/
+    fuelsync_package_root: Path = current_file.parent.parent
 
-    return config_path
+    # Navigate down into config/
+    config_file_path: Path = fuelsync_package_root / 'config' / 'config.yaml'
+
+    return config_file_path
 
 
-def load_config(config_path: Path | None = None) -> EfsConfig:
+def load_config(config_path: Path | str | None = None) -> FuelSyncConfig:
     """
-    Load, parse, and validate the YAML configuration file.
+    Load, parse, and validate the configuration file.
 
-    This function reads a YAML configuration file, validates its structure
-    and types using the EfsConfig Pydantic model, and returns a validated
-    configuration object. All validation happens automatically through Pydantic.
+    This is the primary entry point for configuration loading. It handles the entire
+    pipeline: file resolution -> YAML parsing -> Pydantic validation -> typed object.
 
-    If no config path is provided, the function automatically locates the
-    config file by walking up the directory tree to find the project root.
+    The function fails fast with descriptive errors if:
+    - The config file doesn't exist
+    - The YAML is malformed
+    - Any required fields are missing
+    - Any fields have invalid types or values
 
     Args:
-        config_path: Path to the configuration YAML file. If None, automatically
-                    finds and uses 'config/config.yaml' relative to the project
-                    root (the 'fuelsync' directory).
+        config_path: Optional explicit path to a config file. This is useful for:
+                     - Testing with mock configurations
+                     - Supporting multiple environments (dev, staging, prod)
+                     - Allowing users to override the default config location
+
+                     If None, uses the default location determined by
+                     _get_default_config_path().
 
     Returns:
-        A validated EfsConfig instance with all required configuration values.
+        A fully validated FuelSyncConfig object with strong typing and all fields
+        guaranteed to be present and valid.
 
     Raises:
-        FileNotFoundError: If the configuration file doesn't exist at the
-                          specified or default path, or if the project root
-                          cannot be found.
-        yaml.YAMLError: If the YAML file is malformed or cannot be parsed.
-        ValidationError: If the configuration values fail Pydantic validation
-                        (missing required fields, wrong types, invalid URLs, etc.).
-        ValueError: If the configuration file is empty.
+        FileNotFoundError: The specified config file does not exist on disk.
+
+        yaml.YAMLError: The file exists but contains invalid YAML syntax.
+                       This could be caused by:
+                       - Incorrect indentation
+                       - Missing colons
+                       - Unquoted special characters
+
+        ValidationError: The YAML is valid but the configuration is invalid.
+                        Pydantic will provide detailed information about:
+                        - Which field(s) failed validation
+                        - What the expected type/format was
+                        - What value was actually provided
 
     Example:
-        >>> # Load from default location (automatically found)
-        >>> config = load_config()
-        >>> print(config.efs_endpoint_url)
-        >>>
-        >>> # Load from custom location
-        >>> config = load_config(Path('/etc/fuelsync/config.yaml'))
+        # Use default config location
+        config = load_config()
+
+        # Use explicit config for testing
+        test_config = load_config('/tmp/test_config.yaml')
+
+        # Access configuration values with full type safety
+        api_url = config.efs.endpoint_url
+        timeout = config.client.request_timeout
     """
-    # ========================================================================
-    # STEP 1: Determine Configuration Path
-    # ========================================================================
-    # If no path is provided, use intelligent path discovery to find the
-    # config file relative to the project root
-    if config_path is None:
-        config_path = _get_default_config_path()
+    # 1. Resolve Configuration File Path
+    # -----------------------------------
+    # Determine which config file to load. If the user provided a specific path,
+    # use that. Otherwise, fall back to the default project location.
+    if config_path:
+        path_obj: Path = Path(config_path)
+    else:
+        path_obj = _get_default_config_path()
 
-    logger.info(f'Loading configuration from: {config_path}')
+    logger.debug(f'Resolving configuration from: {path_obj}')
 
-    # ========================================================================
-    # STEP 2: Read and Parse YAML File
-    # ========================================================================
+    # 2. Verify File Exists
+    # ----------------------
+    # Fail immediately if the file is missing rather than attempting to parse.
+    # This provides a clearer error message than the generic YAML parsing error.
+    if not path_obj.exists():
+        error_msg: str = f'Configuration file not found at: {path_obj}'
+        logger.error(error_msg)
+        raise FileNotFoundError(error_msg)
+
+    # 3. Parse YAML into Python Dictionary
+    # -------------------------------------
+    # Read the file and parse it as YAML. At this stage, we have no type safety—
+    # just a nested dictionary of raw Python objects (strings, ints, lists, etc.).
     try:
-        # Verify the file exists before attempting to open it
-        if not config_path.exists():
-            error_message: str = f'Configuration file not found at: {config_path}'
-            logger.error(error_message)
-            raise FileNotFoundError(error_message)
+        with open(path_obj, encoding='utf-8') as f:
+            raw_config:dict[str, Any] = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        logger.error(f'Failed to parse YAML config file: {e}')
+        raise
 
-        # Open and read the YAML file
-        with open(config_path, encoding='utf-8') as config_file:
-            logger.debug(f'Reading YAML from: {config_path}')
-            config_data: dict[str, Any] | None = yaml.safe_load(config_file)
-
-            # Check if the file was empty or contained only comments
-            if config_data is None:
-                error_message: str = f'Configuration file is empty or contains no valid data: {config_path}'
-                logger.error(error_message)
-                raise ValueError(error_message)
-
-        logger.debug('YAML parsed successfully, validating structure...')
-
-    except yaml.YAMLError as yaml_error:
-        error_message: str = f'Failed to parse YAML file: {yaml_error}'
-        logger.error(error_message)
-        raise yaml.YAMLError(error_message) from yaml_error
-
-    # ========================================================================
-    # STEP 3: Validate Configuration with Pydantic
-    # ========================================================================
-    # Pydantic will automatically:
-    # - Check that all required fields are present
-    # - Validate types (URL format, boolean values, etc.)
-    # - Map YAML keys to Python attributes using the aliases
-    # - Protect sensitive data (passwords become SecretStr)
+    # 4. Validate with Pydantic
+    # --------------------------
+    # This is where the magic happens. Pydantic takes the raw dictionary and:
+    # - Validates each field exists
+    # - Validates types match what we declared in the models
+    # - Runs all custom validators (like password_not_empty)
+    # - Converts basic types to more specific ones (str -> Path, str -> HttpUrl)
+    # - Applies default values where fields are missing
+    #
+    # If validation fails, Pydantic raises ValidationError with detailed information
+    # about what went wrong and where.
     try:
-        logger.debug('Validating configuration with Pydantic model')
-        validated_config: EfsConfig = EfsConfig(**config_data)
-        logger.info('Configuration loaded and validated successfully')
-        return validated_config
-
-    except ValidationError as validation_error:
-        # Pydantic provides detailed error messages showing exactly what failed
-        error_message: str = (
-            f'Configuration validation failed. Check that all required fields '
-            f'are present and have valid values.\n'
-            f'Details: {validation_error}'
-        )
-        logger.error(error_message)
-        line_errors: list[InitErrorDetails] = cast(
-            list[InitErrorDetails], validation_error.errors()
-        )
-        raise ValidationError.from_exception_data(
-            title='EfsConfig',
-            line_errors=line_errors,
-        ) from validation_error
+        config = FuelSyncConfig(**raw_config)
+        logger.debug('Configuration validated successfully.')
+        return config
+    except ValidationError as e:
+        logger.error(f'Configuration validation failed: {e}')
+        raise
