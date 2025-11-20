@@ -7,18 +7,18 @@ count and total amount for a given date range.
 """
 
 import logging
-from datetime import datetime
+from typing import Any
 
 from lxml import (
     etree,  # pyright: ignore[reportUnknownVariableType, reportAttributeAccessIssue]
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..utils import (
     check_for_soap_fault,
     extract_soap_body,
     parse_soap_response,
-    safe_convert,
+    parse_xml_to_dict,
 )
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -44,19 +44,22 @@ class WSTransSummary(BaseModel):
     @classmethod
     def from_xml_element(cls, element: etree._Element) -> 'WSTransSummary':
         """
-        Parse a <result> XML element into a WSTransSummary instance.
+        Parse a <value> XML element into a WSMCTransExtLocV2 instance.
 
-        Args:
-            element: The XML element containing the summary data.
-
-        Returns:
-            A validated WSTransSummary instance.
+        Uses the generic parse_xml_to_dict utility which automatically handles:
+        - Simple fields (via Pydantic field aliases)
+        - Nested single models (WSFleetMemo)
+        - Nested list models (lineItems, infos, etc.)
         """
-        data: dict[str, int | float | bool | datetime | str | None] = {
-            'tranCount': safe_convert(element, 'tranCount', int),
-            'tranTotal': safe_convert(element, 'tranTotal', float),
-        }
-        return cls.model_validate(data)
+        # Extract raw data from XML using introspection
+        data: dict[str, Any] = parse_xml_to_dict(element, cls)
+
+        try:
+            # Validate and convert types using Pydantic
+            return cls.model_validate(data)
+        except ValidationError as e:
+            logger.error(f'Failed to validate parsed XML data: {e}\nData: {data}')
+            raise ValueError(f'Pydantic validation failed for transaction: {e}') from e
 
     def __repr__(self) -> str:
         return f'WSTransSummary(count={self.tran_count}, total=${self.tran_total:.2f})'
