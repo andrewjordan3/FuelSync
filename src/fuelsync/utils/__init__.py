@@ -1,4 +1,6 @@
-from .config_loader import EfsConfig, load_config
+# fuelsync/utils/__init__.py
+
+from .config_loader import FuelSyncConfig, load_config
 from .datetime_utils import format_for_soap
 from .logger import setup_logger
 from .login import login_to_efs
@@ -6,7 +8,7 @@ from .model_tools import is_nil, safe_convert
 from .xml_parser import check_for_soap_fault, extract_soap_body, parse_soap_response
 
 __all__: list[str] = [
-    'EfsConfig',
+    'FuelSyncConfig',
     'check_for_soap_fault',
     'extract_soap_body',
     # datetime_utils.py

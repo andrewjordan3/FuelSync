@@ -7,10 +7,6 @@ This module provides a high-level client for interacting with the EFS
 construction using Jinja2 templates, and communication with the API endpoint.
 """
 
-import truststore
-
-truststore.inject_into_ssl()
-
 import logging
 from pathlib import Path
 from types import TracebackType
@@ -19,7 +15,7 @@ import requests
 from jinja2 import Environment, FileSystemLoader, Template
 
 from .models import EfsOperationRequest
-from .utils import EfsConfig, load_config, login_to_efs
+from .utils import FuelSyncConfig, load_config, login_to_efs
 
 # Set up module-level logger
 logger: logging.Logger = logging.getLogger(__name__)
@@ -62,7 +58,9 @@ class EfsClient:
             >>>     client.logout()
     """
 
-    def __init__(self, config_path: Path | None = None) -> None:
+    def __init__(
+        self, config_path: Path | None = None, config: FuelSyncConfig | None = None
+    ) -> None:
         """
         Initialize the EFS client with configuration and authentication.
 
@@ -75,6 +73,8 @@ class EfsClient:
             config_path: Optional path to the configuration file.
                         If None, uses the default configuration location
                         as defined in load_config().
+            config: Optional pre-loaded FuelSyncConfig instance. If provided,
+                   config_path is ignored.
 
         Raises:
             FileNotFoundError: If the config file doesn't exist.
@@ -89,23 +89,22 @@ class EfsClient:
             >>> # Use custom config location
             >>> client = EfsClient(Path('/etc/fuelsync/config.yaml'))
         """
-        config_path_description: str = str(config_path) if config_path else 'default'
-        logger.debug(
-            f'Initializing EfsClient with config_path={config_path_description}'
-        )
-
         # ====================================================================
         # STEP 1: Load Configuration
         # ====================================================================
-        # Load the configuration, either from the specified path or from
-        # the default location. This config contains the API endpoint,
-        # credentials, and request settings.
-        if config_path is not None:
+        # If no config object is passed, load the configuration, either from the
+        # specified path or from the default location. This config contains the
+        # API endpoint, credentials, and request settings.
+        if config is not None:
+            # Use the injected configuration (Dependency Injection)
+            self.config: FuelSyncConfig = config
+            logger.debug('Initializing EfsClient with injected configuration')
+        elif config_path is not None:
             logger.info(f'Loading EFS configuration from: {config_path}')
-            self.config: EfsConfig = load_config(config_path)
+            self.config = load_config(config_path)
         else:
             logger.info('Loading EFS configuration from default location')
-            self.config: EfsConfig = load_config()
+            self.config = load_config()
 
         logger.debug('Configuration loaded successfully')
 
@@ -115,7 +114,7 @@ class EfsClient:
         # Immediately authenticate with the EFS API to obtain a session token.
         # This token will be included in all subsequent operation requests.
         # If authentication fails, the exception will propagate to the caller.
-        logger.info(f'Authenticating with EFS API at {self.config.efs_endpoint_url}')
+        logger.info(f'Authenticating with EFS API at {self.config.efs.endpoint_url}')
 
         try:
             self.session_token: str = login_to_efs(self.config)
@@ -244,17 +243,17 @@ class EfsClient:
         """
         try:
             logger.debug(
-                f'Sending SOAP request to {self.config.efs_endpoint_url} '
-                f'(timeout={self.config.request_timeout}s)'
+                f'Sending SOAP request to {self.config.efs.endpoint_url} '
+                f'(timeout={self.config.client.request_timeout}s)'
             )
 
             # Send the POST request with the SOAP envelope encoded as UTF-8 bytes
             response: requests.Response = requests.post(
-                str(self.config.efs_endpoint_url),
+                str(self.config.efs.endpoint_url),
                 data=body.encode('utf-8'),
                 headers=headers,
-                timeout=self.config.request_timeout,
-                verify=self.config.verify_ssl_certificate,
+                timeout=self.config.client.request_timeout,
+                verify=self.config.client.verify_ssl,
             )
 
             # Log the response status for debugging/monitoring
@@ -278,7 +277,7 @@ class EfsClient:
         except requests.exceptions.Timeout as timeout_error:
             logger.error(
                 f'Request timeout for operation {operation_name} '
-                f'after {self.config.request_timeout}s: {timeout_error}'
+                f'after {self.config.client.request_timeout}s: {timeout_error}'
             )
             raise
 
@@ -492,7 +491,6 @@ class EfsClient:
 
         # Return None (or False) to allow exceptions to propagate
         # Return True would suppress the exception, which we don't want
-        return None
 
     def __repr__(self) -> str:
         """
@@ -503,7 +501,7 @@ class EfsClient:
         """
         return (
             f'EfsClient('
-            f'endpoint={self.config.efs_endpoint_url}, '
+            f'endpoint={self.config.efs.endpoint_url}, '
             f'authenticated={bool(self.session_token)}'
             f')'
         )

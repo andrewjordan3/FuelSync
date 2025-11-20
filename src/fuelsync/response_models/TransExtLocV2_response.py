@@ -18,13 +18,13 @@ from lxml import etree
 # from lxml import ET
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from fuelsync.utils.model_tools import parse_xml_to_dict
+
 # Import your robust parser utilities
 from ..utils import (
     check_for_soap_fault,
     extract_soap_body,
-    is_nil,
     parse_soap_response,
-    safe_convert,
 )
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -140,14 +140,6 @@ class WSTransactionCarmsStmt(BaseModel):
 
     statement_id: str | None = Field(None, alias='statementId')
 
-    @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSTransactionCarmsStmt':
-        """Parse a <carmsStatements> XML element into a WSTransactionCarmsStmt instance."""
-        data: dict[str, int | float | bool | datetime | str | None] = {
-            'statementId': safe_convert(element, 'statementId', str),
-        }
-        return cls.model_validate(data)
-
     def __repr__(self) -> str:
         return f'WSTransactionCarmsStmt(statement_id={self.statement_id})'
 
@@ -188,38 +180,6 @@ class WSFleetMemo(BaseModel):
     merc_cat: str | None = Field(None, alias='mercCat')
     merc_city: str | None = Field(None, alias='mercCity')
 
-    @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSFleetMemo':
-        """Parse a <fleetMemo> XML element into a WSFleetMemo instance."""
-        data: dict[str, int | float | bool | datetime | str | None] = {
-            'cardNumber': safe_convert(element, 'cardNumber', str),
-            'acceptorName': safe_convert(element, 'acceptorName', str),
-            'authCode': safe_convert(element, 'authCode', str),
-            'tchMemoDate': safe_convert(element, 'tchMemoDate', datetime),
-            'amount': safe_convert(element, 'amount', int),
-            'contractId': safe_convert(element, 'contractId', int),
-            'msgNumType': safe_convert(element, 'msgNumType', int),
-            'type': safe_convert(element, 'type', int),
-            'bin': safe_convert(element, 'bin', int),
-            'mcCardNum': safe_convert(element, 'mcCardNum', str),
-            'postedAmount': safe_convert(element, 'postedAmount', int),
-            'atmFee': safe_convert(element, 'atmFee', int),
-            'pinSent': safe_convert(element, 'pinSent', int),
-            'atmId': safe_convert(element, 'atmId', str),
-            'merchType': safe_convert(element, 'merchType', int),
-            'stan': safe_convert(element, 'stan', int),
-            'entryMode': safe_convert(element, 'entryMode', int),
-            'neverClearedDate': safe_convert(element, 'neverClearedDate', datetime),
-            'mercName': safe_convert(element, 'mercName', str),
-            'mercAddr': safe_convert(element, 'mercAddr', str),
-            'mercZip': safe_convert(element, 'mercZip', str),
-            'mercPhone': safe_convert(element, 'mercPhone', str),
-            'mercState': safe_convert(element, 'mercState', str),
-            'mercCat': safe_convert(element, 'mercCat', str),
-            'mercCity': safe_convert(element, 'mercCity', str),
-        }
-        return cls.model_validate(data)
-
     def __repr__(self) -> str:
         return (
             f'WSFleetMemo('
@@ -241,14 +201,6 @@ class WSTransactionInfo(BaseModel):
 
     info_type: str | None = Field(None, alias='type')
     info_value: str | None = Field(None, alias='value')
-
-    @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSTransactionInfo':
-        data: dict[str, int | float | bool | datetime | str | None] = {
-            'type': safe_convert(element, 'type', str),
-            'value': safe_convert(element, 'value', str),
-        }
-        return cls.model_validate(data)
 
     def __repr__(self) -> str:
         return f'WSTransactionInfo(type={self.info_type}, value={self.info_value})'
@@ -276,19 +228,6 @@ class WSTransTaxes(BaseModel):
     exempt_flag: str | None = Field(None, alias='exemptFlag')
     pst_exempt_adjust: float | None = Field(None, alias='pstExemptAdjust')
     gst_exempt_adjust: float | None = Field(None, alias='gstExemptAdjust')
-
-    @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSTransTaxes':
-        data: dict[str, int | float | bool | datetime | str | None] = {
-            'taxDescription': safe_convert(element, 'taxDescription', str),
-            'grossNetFlag': safe_convert(element, 'grossNetFlag', str),
-            'amount': safe_convert(element, 'amount', float),
-            'taxCode': safe_convert(element, 'taxCode', str),
-            'exemptFlag': safe_convert(element, 'exemptFlag', str),
-            'pstExemptAdjust': safe_convert(element, 'pstExemptAdjust', float),
-            'gstExemptAdjust': safe_convert(element, 'gstExemptAdjust', float),
-        }
-        return cls.model_validate(data)
 
     def __repr__(self) -> str:
         return f'WSTransTaxes(description={self.tax_description}, amount={self.amount})'
@@ -331,37 +270,6 @@ class WSTransactionLineItemExt(BaseModel):
 
     line_taxes: list[WSTransTaxes] = Field(default_factory=list, alias='lineTaxes')
 
-    @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSTransactionLineItemExt':
-        data: dict[str, Any] = {
-            'amount': safe_convert(element, 'amount', float),
-            'billingFlag': safe_convert(element, 'billingFlag', int),
-            'category': safe_convert(element, 'category', str),
-            'cmptAmount': safe_convert(element, 'cmptAmount', float),
-            'cmptPPU': safe_convert(element, 'cmptPPU', float),
-            'discAmount': safe_convert(element, 'discAmount', float),
-            'fuelType': safe_convert(element, 'fuelType', int),
-            'groupCategory': safe_convert(element, 'groupCategory', str),
-            'groupNumber': safe_convert(element, 'groupNumber', int),
-            'issuerDeal': safe_convert(element, 'issuerDeal', float),
-            'issuerDealPPU': safe_convert(element, 'issuerDealPPU', float),
-            'lineNumber': safe_convert(element, 'lineNumber', int),
-            'number': safe_convert(element, 'number', int),
-            'ppu': safe_convert(element, 'ppu', float),
-            'quantity': safe_convert(element, 'quantity', float),
-            'retailPPU': safe_convert(element, 'retailPPU', float),
-            'retailAmount': safe_convert(element, 'retailAmount', float),
-            'serviceType': safe_convert(element, 'serviceType', int),
-            'useType': safe_convert(element, 'useType', int),
-        }
-
-        # Parse nested list of lineTaxes
-        data['lineTaxes'] = [
-            WSTransTaxes.from_xml_element(item) for item in element.findall('lineTaxes')
-        ]
-
-        return cls.model_validate(data)
-
     def __repr__(self) -> str:
         return (
             f'WSTransactionLineItemExt('
@@ -388,15 +296,6 @@ class WSMetaData(BaseModel):
     type_id: str | None = Field(None, alias='typeId')
     meta_data: str | None = Field(None, alias='metaData')
     description: str | None = Field(None, alias='description')
-
-    @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSMetaData':
-        data: dict[str, int | float | bool | datetime | str | None] = {
-            'typeId': safe_convert(element, 'typeId', str),
-            'metaData': safe_convert(element, 'metaData', str),
-            'description': safe_convert(element, 'description', str),
-        }
-        return cls.model_validate(data)
 
     def __repr__(self) -> str:
         return f'WSMetaData(type={self.type_id}, data={self.meta_data})'
@@ -494,104 +393,19 @@ class WSMCTransExtLocV2(BaseModel):
         """
         Parse a <value> XML element into a WSMCTransExtLocV2 instance.
 
-        This is an explicit parser that handles all fields individually.
+        Uses the generic parse_xml_to_dict utility which automatically handles:
+        - Simple fields (via Pydantic field aliases)
+        - Nested single models (WSFleetMemo)
+        - Nested list models (lineItems, infos, etc.)
         """
-        data: dict[str, Any] = {}
-
-        # --- Simple Types ---
-        data['ARBatchNumber'] = safe_convert(element, 'ARBatchNumber', int)
-        data['CPNRDeliveryTP'] = safe_convert(element, 'CPNRDeliveryTP', str)
-        data['MCMultiCurrency'] = safe_convert(element, 'MCMultiCurrency', bool)
-        data['OPDataSource'] = safe_convert(element, 'OPDataSource', str)
-        data['POSDate'] = safe_convert(element, 'POSDate', datetime)
-        data['accountType'] = safe_convert(element, 'accountType', str)
-        data['arNumber'] = safe_convert(element, 'arNumber', str)
-        data['authCode'] = safe_convert(element, 'authCode', str)
-        data['billingCountry'] = safe_convert(element, 'billingCountry', int)
-        data['billingCurrency'] = safe_convert(element, 'billingCurrency', str)
-        data['cardNumber'] = safe_convert(element, 'cardNumber', str)
-        data['carrierFee'] = safe_convert(element, 'carrierFee', float)
-        data['carrierId'] = safe_convert(element, 'carrierId', int)
-        data['companyXRef'] = safe_convert(element, 'companyXRef', str)
-        data['contractId'] = safe_convert(element, 'contractId', int)
-        data['conversionRate'] = safe_convert(element, 'conversionRate', float)
-        data['country'] = safe_convert(element, 'country', int)
-        data['discAmount'] = safe_convert(element, 'discAmount', float)
-        data['discType'] = safe_convert(element, 'discType', int)
-        data['fundedTotal'] = safe_convert(element, 'fundedTotal', float)
-        data['handEntered'] = safe_convert(element, 'handEntered', bool)
-        data['inAddress'] = safe_convert(element, 'inAddress', str)
-        data['invoice'] = safe_convert(element, 'invoice', str)
-        data['issuerDeal'] = safe_convert(element, 'issuerDeal', float)
-        data['issuerFee'] = safe_convert(element, 'issuerFee', float)
-        data['issuerId'] = safe_convert(element, 'issuerId', int)
-        data['language'] = safe_convert(element, 'language', int)
-        data['locationChainId'] = safe_convert(element, 'locationChainId', int)
-        data['locationCountry'] = safe_convert(element, 'locationCountry', int)
-        data['locationCurrency'] = safe_convert(element, 'locationCurrency', str)
-        data['locationId'] = safe_convert(element, 'locationId', int)
-        data['locationName'] = safe_convert(element, 'locationName', str)
-        data['locationCity'] = safe_convert(element, 'locationCity', str)
-        data['locationState'] = safe_convert(element, 'locationState', str)
-        data['locationZip'] = safe_convert(element, 'locationZip', str)
-        data['locationAddress'] = safe_convert(element, 'locationAddress', str)
-        data['locationLongitude'] = safe_convert(element, 'locationLongitude', str)
-        data['locationLatitude'] = safe_convert(element, 'locationLatitude', str)
-        data['messageDLVD'] = safe_convert(element, 'messageDLVD', str)
-        data['netTotal'] = safe_convert(element, 'netTotal', float)
-        data['nonAreaFee'] = safe_convert(element, 'nonAreaFee', float)
-        data['override'] = safe_convert(element, 'override', bool)
-        data['originalTransId'] = safe_convert(element, 'originalTransId', int)
-        data['postDiscTax'] = safe_convert(element, 'postDiscTax', float)
-        data['preDiscTax'] = safe_convert(element, 'preDiscTax', float)
-        data['prefTotal'] = safe_convert(element, 'prefTotal', float)
-        data['reportedCarrier'] = safe_convert(element, 'reportedCarrier', datetime)
-        data['settleAmount'] = safe_convert(element, 'settleAmount', float)
-        data['settleId'] = safe_convert(element, 'settleId', int)
-        data['splitBilling'] = safe_convert(element, 'splitBilling', bool)
-        data['statementId'] = safe_convert(element, 'statementId', int)
-        data['supplierId'] = safe_convert(element, 'supplierId', int)
-        data['suprFee'] = safe_convert(element, 'suprFee', float)
-        data['taxExemptAmount'] = safe_convert(element, 'taxExemptAmount', float)
-        data['terminalId'] = safe_convert(element, 'terminalId', str)
-        data['terminalType'] = safe_convert(element, 'terminalType', str)
-        data['transReported'] = safe_convert(element, 'transReported', datetime)
-        data['transactionDate'] = safe_convert(element, 'transactionDate', datetime)
-        data['transactionId'] = safe_convert(element, 'transactionId', int)
-        data['transactionType'] = safe_convert(element, 'transactionType', int)
-
-        # --- Nested Single Models ---
-        fleet_memo_elem = element.find('fleetMemo')
-        if fleet_memo_elem is not None and not is_nil(fleet_memo_elem):
-            data['fleetMemo'] = WSFleetMemo.from_xml_element(fleet_memo_elem)
-
-        # --- Nested List Models ---
-        data['lineItems'] = [
-            WSTransactionLineItemExt.from_xml_element(item)
-            for item in element.findall('lineItems')
-        ]
-        data['carmsStatements'] = [
-            WSTransactionCarmsStmt.from_xml_element(item)
-            for item in element.findall('carmsStatements')
-        ]
-        data['infos'] = [
-            WSTransactionInfo.from_xml_element(item)
-            for item in element.findall('infos')
-        ]
-        data['metaData'] = [
-            WSMetaData.from_xml_element(item) for item in element.findall('metaData')
-        ]
-        data['transTaxes'] = [
-            WSTransTaxes.from_xml_element(item)
-            for item in element.findall('transTaxes')
-        ]
+        # Extract raw data from XML using introspection
+        data: dict[str, Any] = parse_xml_to_dict(element, cls)
 
         try:
-            # Use model_validate to create the instance
+            # Validate and convert types using Pydantic
             return cls.model_validate(data)
         except ValidationError as e:
             logger.error(f'Failed to validate parsed XML data: {e}\nData: {data}')
-            # Raise a more specific error
             raise ValueError(f'Pydantic validation failed for transaction: {e}') from e
 
     def __repr__(self) -> str:
@@ -648,13 +462,13 @@ class GetMCTransExtLocV2Response(BaseModel):
 
         # Based on the XML structure, the repeating transaction element is <value>
         # First find the result element, then get its direct value children
-        result_element = body.find('.//result')
+        result_element: etree._Element = body.find('.//result')
         if result_element is None:
             logger.warning('No <result> element found in the response body.')
             return cls(transactions=[])
 
         # Get only the direct children named 'value'
-        result_elements = result_element.findall('./value')
+        result_elements: list[etree._Element] = result_element.findall('./value')
 
         if not result_elements:
             logger.warning('No <value> elements found in the response body.')
