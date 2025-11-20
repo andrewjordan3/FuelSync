@@ -52,26 +52,24 @@ class FuelPipeline:
 
     def __init__(
         self,
-        parquet_path: str | Path,
         client_config_path: Path | None = None,
     ) -> None:
         """
         Initialize the pipeline configuration.
 
         Args:
-            parquet_path: The file system path where the Parquet file should be
-                          stored. If it doesn't exist, it will be created.
             client_config_path: Path to the fuelsync config.yaml. If not provided,
                                 the client looks in the default project location.
         """
-        self.parquet_file_path: Path = Path(parquet_path)
 
         # Load configuration immediately upon initialization
         # This ensures we fail fast if config is missing or invalid, and
         # prevents reloading it for every batch.
         self.config: FuelSyncConfig = load_config(client_config_path)
 
+        # Begin the module level logger and populate the parquet file path
         self.logger: logging.Logger = setup_logger(config=self.config)
+        self.parquet_file_path: Path = Path(self.config.storage.parquet_file)
 
         # Run State / Configuration
         # These are populated when run_synchronization is called
