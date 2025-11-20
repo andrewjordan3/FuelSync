@@ -14,12 +14,10 @@ from pathlib import Path
 import pandas as pd
 from requests import Response
 
-from fuelsync.utils.logger import setup_logger
-
 from .efs_client import EfsClient
 from .models import GetMCTransExtLocV2Request
 from .response_models import GetMCTransExtLocV2Response
-from .utils import FuelSyncConfig, load_config
+from .utils import FuelSyncConfig, load_config, setup_logger
 
 
 class FuelPipeline:
@@ -48,11 +46,13 @@ class FuelPipeline:
             transaction data is persisted.
         client_config_path (Path | None): Optional path to a specific YAML config
             file. If None, the default config location is used.
+        efs_client (EfsClient): Persistent authenticated client instance that is
+            reused across all batches to avoid unnecessary login/logout cycles.
     """
 
     def __init__(
         self,
-        client_config_path: Path | None = None,
+        client_config_path: Path | str | None = None,
     ) -> None:
         """
         Initialize the pipeline configuration.
@@ -71,12 +71,41 @@ class FuelPipeline:
         self.logger: logging.Logger = setup_logger(config=self.config)
         self.parquet_file_path: Path = Path(self.config.storage.parquet_file)
 
+        # Initial instantiation of efs client
+        self.efs_client = EfsClient(config=self.config)
+
         # Run State / Configuration
         # These are populated when run_synchronization is called
         self.run_start_date: datetime | None = None
         self.run_end_date: datetime | None = None
         self.batch_size_days: int = 1
         self.request_delay_seconds: float = 0.0
+
+    def _recreate_client(self) -> None:
+        """
+        Recreate the EFS client with a fresh authentication session.
+
+        This method is called when the existing session has failed or expired.
+        It attempts to logout the old session (if possible), then creates a
+        new authenticated client instance.
+
+        Raises:
+            Exception: If client recreation fails, indicating a fatal issue
+                      that should abort the pipeline.
+        """
+        self.logger.warning('Recreating EFS client with fresh session')
+
+        try:
+            # Attempt to logout the old session (may fail if session is already dead)
+            self.efs_client.logout()
+        except Exception as logout_error:
+            self.logger.debug(
+                f'Could not logout old session (may already be invalid): {logout_error}'
+            )
+
+        # Create new authenticated client
+        self.efs_client = EfsClient(config=self.config)
+        self.logger.info('New EFS client session established')
 
     def _retrieve_latest_transaction_timestamp(self) -> datetime | None:
         """
@@ -193,7 +222,6 @@ class FuelPipeline:
 
     def _fetch_single_batch(
         self,
-        client: EfsClient,
         batch_start: datetime,
         batch_end: datetime,
     ) -> pd.DataFrame | None:
@@ -225,7 +253,7 @@ class FuelPipeline:
         )
 
         # Execute SOAP call and parse the XML response
-        raw_response: Response = client.execute_operation(request)
+        raw_response: Response = self.efs_client.execute_operation(request)
         parsed_response: GetMCTransExtLocV2Response = (
             GetMCTransExtLocV2Response.from_soap_response(raw_response.text)
         )
@@ -275,9 +303,7 @@ class FuelPipeline:
 
         for attempt in range(max_retries):
             try:
-                # Context manager handles authentication, logout, and cleanup automatically
-                with EfsClient(config=self.config) as client:
-                    return self._fetch_single_batch(client, batch_start, batch_end)
+                return self._fetch_single_batch(batch_start, batch_end)
 
             except Exception as e:
                 self.logger.warning(
@@ -292,6 +318,23 @@ class FuelPipeline:
                         f'Aborting pipeline.'
                     )
                     raise
+
+                # Defensive session recovery: Since EFS returns generic 500 errors
+                # for everything, we can't distinguish session failures from other
+                # issues. Recreate the client on ANY error to ensure session problems
+                # are resolved. This adds ~2 seconds per failed batch, which is
+                # acceptable for error cases.
+                self.logger.info(
+                    'Recreating EFS client before retry (defensive recovery '
+                    'due to generic SOAP error responses)'
+                )
+                try:
+                    self._recreate_client()
+                except Exception as recreate_error:
+                    self.logger.error(
+                        f'Failed to recreate client: {recreate_error}. '
+                        f'Will retry with existing client after backoff.'
+                    )
 
                 # Exponential backoff: wait progressively longer between retries
                 # (1s, 2s, 4s for default max_retries=3)
@@ -446,6 +489,23 @@ class FuelPipeline:
                 compression=self.config.storage.compression,
             )
 
+    def cleanup(self) -> None:
+        """
+        Clean up resources, specifically the EFS client session.
+
+        This method should be called when the pipeline is completely finished,
+        either after successful completion or as part of error cleanup.
+        It ensures the EFS session is properly terminated.
+        """
+        self.logger.debug('Cleaning up EFS client session')
+        try:
+            self.efs_client.logout()
+            self.logger.info('EFS client session terminated')
+        except Exception as cleanup_error:
+            self.logger.warning(
+                f'Error during cleanup (session may already be invalid): {cleanup_error}'
+            )
+
     def run_synchronization(
         self,
         explicit_start_date: datetime | None = None,
@@ -469,23 +529,28 @@ class FuelPipeline:
             f'Starting EFS transaction synchronization pipeline (Dry Run: {dry_run}).'
         )
 
-        # 1. Determine Time Window
-        end_timestamp: datetime = explicit_end_date or datetime.now(UTC)
-        start_timestamp: datetime = self._determine_start_timestamp(explicit_start_date)
+        try:
+            # 1. Determine Time Window
+            end_timestamp: datetime = explicit_end_date or datetime.now(UTC)
+            start_timestamp: datetime = self._determine_start_timestamp(explicit_start_date)
 
-        if start_timestamp >= end_timestamp:
-            self.logger.info(
-                'Start date is in the future or after end date. No synchronization needed.'
+            if start_timestamp >= end_timestamp:
+                self.logger.info(
+                    'Start date is in the future or after end date. No synchronization needed.'
+                )
+                return
+
+            # 2. Fetch Data (Extract)
+            downloaded_data: list[pd.DataFrame] = self._fetch_batches(
+                start_timestamp,
+                end_timestamp,
             )
-            return
 
-        # 2. Fetch Data (Extract)
-        downloaded_data: list[pd.DataFrame] = self._fetch_batches(
-            start_timestamp,
-            end_timestamp,
-        )
+            # 3. Process and Persist (Transform & Load)
+            self._merge_deduplicate_and_save(downloaded_data, dry_run)
 
-        # 3. Process and Persist (Transform & Load)
-        self._merge_deduplicate_and_save(downloaded_data, dry_run)
+            self.logger.info('Pipeline synchronization completed successfully.')
 
-        self.logger.info('Pipeline synchronization completed successfully.')
+        finally:
+            # Always cleanup the client session, even if an error occurred
+            self.cleanup()
