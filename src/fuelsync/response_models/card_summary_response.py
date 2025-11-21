@@ -256,7 +256,7 @@ class WSCardSummary(BaseModel):
         return value
 
     @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSCardSummary':
+    def from_xml_element(cls, element: etree.Element) -> 'WSCardSummary':
         """
         Parse a <value> XML element into a WSCardSummary instance.
 
@@ -296,7 +296,7 @@ class GetCardSummariesResponse(BaseModel):
         cards: List of WSCardSummary objects representing fleet cards.
     """
 
-    cards: list[WSCardSummary] = Field(
+    cards: list[WSCardSummary] = Field( # pyright: ignore[reportUnknownVariableType]
         default_factory=list,
         description='List of card summary records',
     )
@@ -323,20 +323,20 @@ class GetCardSummariesResponse(BaseModel):
         logger.debug('Parsing SOAP response for GetCardSummariesResponse')
 
         # Parse and validate SOAP envelope
-        root: etree._Element = parse_soap_response(xml_string)
+        root: etree.Element = parse_soap_response(xml_string)
         check_for_soap_fault(root)
-        body: etree._Element = extract_soap_body(root)
+        body: etree.Element = extract_soap_body(root)
 
         cards: list[WSCardSummary] = []
 
         # Find the result element containing card data
-        result_element: etree._Element = body.find('.//result')
+        result_element: etree.Element | None = body.find('.//result')
         if result_element is None:
             logger.warning('No <result> element found in response body.')
             return cls(cards=[])
 
         # Get all card value elements
-        card_elements: list[etree._Element] = result_element.findall('./value')
+        card_elements: list[etree.Element] = result_element.findall('./value')
 
         if not card_elements:
             logger.warning('No <value> elements found in response body.')

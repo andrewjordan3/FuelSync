@@ -5,12 +5,11 @@ XML parsing utilities for EFS SOAP responses.
 Provides helper functions for parsing SOAP XML responses with proper
 namespace handling.
 """
-# pyright: reportUnknownMemberType=false, reportAttributeAccessIssue=false, reportUnknownVariableType=false, reportUnknownParameterType=false
 
 from lxml import etree
 
 
-def parse_soap_response(xml_string: str) -> etree._Element:
+def parse_soap_response(xml_string: str) -> etree.Element:
     """
     Parse a SOAP XML response string into an lxml Element.
 
@@ -26,7 +25,7 @@ def parse_soap_response(xml_string: str) -> etree._Element:
     return etree.fromstring(xml_string.encode('utf-8'))
 
 
-def extract_soap_body(root: etree._Element) -> etree._Element:
+def extract_soap_body(root: etree.Element) -> etree.Element:
     """
     Extract the Body element from a SOAP envelope.
 
@@ -44,7 +43,7 @@ def extract_soap_body(root: etree._Element) -> etree._Element:
         'soap': 'http://schemas.xmlsoap.org/soap/envelope/',
     }
 
-    body: etree._Element | None = root.find('.//soap:Body', namespaces=namespaces)
+    body: etree.Element | None = root.find('.//soap:Body', namespaces=namespaces)
 
     if body is None:
         raise ValueError('No SOAP Body element found in response')
@@ -52,7 +51,7 @@ def extract_soap_body(root: etree._Element) -> etree._Element:
     return body
 
 
-def check_for_soap_fault(root: etree._Element) -> None:
+def check_for_soap_fault(root: etree.Element) -> None:
     """
     Check if the SOAP response contains a Fault element and raise if found.
 
@@ -66,7 +65,7 @@ def check_for_soap_fault(root: etree._Element) -> None:
         'soap': 'http://schemas.xmlsoap.org/soap/envelope/',
     }
 
-    fault: etree._Element | None = root.find('.//soap:Fault', namespaces=namespaces)
+    fault: etree.Element | None = root.find('.//soap:Fault', namespaces=namespaces)
 
     if fault is not None:
         fault_code: str = fault.findtext('faultcode', default='Unknown')

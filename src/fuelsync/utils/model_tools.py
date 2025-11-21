@@ -6,7 +6,6 @@ This module provides low-level tools for extracting data from XML elements and
 structuring it into dictionaries that match Pydantic model definitions.
 It bridges the gap between raw XML (via lxml) and typed Python objects (via Pydantic).
 """
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportAttributeAccessIssue=false, reportUnknownParameterType=false, reportUnknownArgumentType=false
 
 import logging
 import types
@@ -18,7 +17,7 @@ from pydantic import BaseModel
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-def is_nil(element: etree._Element | None) -> bool:
+def is_nil(element: etree.Element | None) -> bool:
     """
     Check if an XML element has xsi:nil='1' or xsi:nil='true' attribute.
 
@@ -38,13 +37,11 @@ def is_nil(element: etree._Element | None) -> bool:
     # Check for xsi:nil attribute (with proper namespace)
     # The namespace map is usually handled by lxml, but looking up the
     # fully qualified name is the most robust method.
-    nil_attr: str | None = element.get(
-        '{http://www.w3.org/2001/XMLSchema-instance}nil'
-    )
+    nil_attr: str | None = element.get('{http://www.w3.org/2001/XMLSchema-instance}nil')
     return nil_attr in {'1', 'true'}
 
 
-def extract_text(element: etree._Element, tag: str) -> str | None:
+def extract_text(element: etree.Element, tag: str) -> str | None:
     """
     Extract stripped text content from a direct child element.
 
@@ -62,7 +59,7 @@ def extract_text(element: etree._Element, tag: str) -> str | None:
         The stripped text string if found and valid.
         None if the tag is missing, explicitly nil, or contains only whitespace.
     """
-    child: etree._Element | None = element.find(tag)
+    child: etree.Element | None = element.find(tag)
 
     # Check if child exists and isn't explicitly marked as nil
     if child is None or is_nil(child):
@@ -162,7 +159,7 @@ def _is_pydantic_model(field_type: Any) -> bool:
 
 
 def _parse_primitive_list(
-    element: etree._Element,
+    element: etree.Element,
     xml_tag: str,
 ) -> list[str | None]:
     """
@@ -180,7 +177,7 @@ def _parse_primitive_list(
     Returns:
         List of string values (or None for nil/empty elements).
     """
-    nested_elements: list[etree._Element] = element.findall(xml_tag)
+    nested_elements: list[etree.Element] = element.findall(xml_tag)
     result: list[str | None] = []
 
     for elem in nested_elements:
@@ -197,7 +194,7 @@ def _parse_primitive_list(
 
 
 def _parse_model_list(
-    element: etree._Element,
+    element: etree.Element,
     xml_tag: str,
     model_class: type[BaseModel],
 ) -> list[dict[str, Any]]:
@@ -216,7 +213,7 @@ def _parse_model_list(
     Returns:
         List of dictionaries, each representing a parsed model.
     """
-    nested_elements: list[etree._Element] = element.findall(xml_tag)
+    nested_elements: list[etree.Element] = element.findall(xml_tag)
 
     if not nested_elements:
         return []
@@ -234,7 +231,7 @@ def _parse_model_list(
 
 
 def _parse_nested_model(
-    element: etree._Element,
+    element: etree.Element,
     xml_tag: str,
     model_class: type[BaseModel],
 ) -> dict[str, Any] | None:
@@ -252,7 +249,7 @@ def _parse_nested_model(
     Returns:
         Dictionary representing the parsed model, or None if tag missing/nil.
     """
-    nested_elem: etree._Element | None = element.find(xml_tag)
+    nested_elem: etree.Element | None = element.find(xml_tag)
 
     if nested_elem is None or is_nil(nested_elem):
         return None
@@ -262,7 +259,7 @@ def _parse_nested_model(
 
 
 def _parse_primitive_field(
-    element: etree._Element,
+    element: etree.Element,
     xml_tag: str,
 ) -> str | None:
     """
@@ -284,7 +281,7 @@ def _parse_primitive_field(
 
 
 def parse_xml_to_dict(
-    element: etree._Element,
+    element: etree.Element,
     model_class: type[BaseModel],
 ) -> dict[str, Any]:
     """
@@ -328,7 +325,9 @@ def parse_xml_to_dict(
 
         elif _is_pydantic_model(actual_type):
             # Single nested model
-            nested_parsed: dict[str, Any] | None = _parse_nested_model(element, xml_tag, actual_type)
+            nested_parsed: dict[str, Any] | None = _parse_nested_model(
+                element, xml_tag, actual_type
+            )
             if nested_parsed is not None:
                 data[field_name] = nested_parsed
 

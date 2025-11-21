@@ -75,6 +75,6 @@ def format_for_soap(dt: date | datetime) -> str:
         tz_formatted: str = f'{tz_offset[:3]}:{tz_offset[3:]}'
     else:
         # Fallback to UTC if somehow no timezone
-        tz_formatted: str = '+00:00'
+        tz_formatted = '+00:00'
 
     return f'{date_time_with_ms}{tz_formatted}'
