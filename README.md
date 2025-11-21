@@ -37,9 +37,8 @@ pip install -r requirements.txt
 - `requests` - HTTP client
 - `lxml` - XML parsing
 - `jinja2` - Template rendering for SOAP envelopes
-
-**Optional dependencies:**
-- `pandas` - For DataFrame conversion (recommended for data analysis)
+- `pandas` - DataFrame operations and data analysis
+- `pyarrow` - Parquet file format support
 
 ## Configuration
 
