@@ -50,11 +50,11 @@ def format_for_soap(dt: date | datetime) -> str:
         '2025-11-14T15:30:45.000+00:00'
     """
     # Convert date to datetime at midnight UTC if needed
-    if isinstance(dt, date) and not isinstance(dt, datetime): # pyright: ignore[reportUnnecessaryIsInstance]
+    if isinstance(dt, date) and not isinstance(dt, datetime):  # pyright: ignore[reportUnnecessaryIsInstance]
         dt = datetime.combine(dt, datetime.min.time(), tzinfo=UTC)
 
     # If datetime is naive (no timezone), assume UTC
-    if isinstance(dt, datetime) and dt.tzinfo is None: # pyright: ignore[reportUnnecessaryIsInstance]
+    if isinstance(dt, datetime) and dt.tzinfo is None:  # pyright: ignore[reportUnnecessaryIsInstance]
         dt = dt.replace(tzinfo=UTC)
 
     # Format the main datetime part with milliseconds

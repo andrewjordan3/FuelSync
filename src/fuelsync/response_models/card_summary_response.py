@@ -296,7 +296,7 @@ class GetCardSummariesResponse(BaseModel):
         cards: List of WSCardSummary objects representing fleet cards.
     """
 
-    cards: list[WSCardSummary] = Field( # pyright: ignore[reportUnknownVariableType]
+    cards: list[WSCardSummary] = Field(  # pyright: ignore[reportUnknownVariableType]
         default_factory=list,
         description='List of card summary records',
     )

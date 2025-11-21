@@ -530,7 +530,9 @@ class FuelPipeline:
         try:
             # 1. Determine Time Window
             end_timestamp: datetime = explicit_end_date or datetime.now(UTC)
-            start_timestamp: datetime = self._determine_start_timestamp(explicit_start_date)
+            start_timestamp: datetime = self._determine_start_timestamp(
+                explicit_start_date
+            )
 
             if start_timestamp >= end_timestamp:
                 logger.info(

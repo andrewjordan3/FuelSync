@@ -52,6 +52,7 @@ class EfsOperationRequest(BaseModel, ABC):
         """
         pass
 
+
 class GetMCTransExtLocV2Request(EfsOperationRequest):
     """
     Request model for getMCTransExtLocV2 operation.
@@ -64,6 +65,7 @@ class GetMCTransExtLocV2Request(EfsOperationRequest):
         beg_date: Start date for transaction search (inclusive).
         end_date: End date for transaction search (inclusive).
     """
+
     # Define operation-specific class attributes
     operation_name: str = 'getMCTransExtLocV2'
     template_name: str = 'getMCTransExtLocV2.xml'
@@ -213,6 +215,7 @@ class WSTranRejectSearch(EfsOperationRequest):
             'invoice': self.invoice,
             'locationId': str(self.location_id) if self.location_id else None,
         }
+
 
 class GetCardSummariesRequest(EfsOperationRequest):
     """

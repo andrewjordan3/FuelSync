@@ -51,6 +51,7 @@ CompressionType = Literal['snappy', 'gzip', 'brotli', 'lz4', 'zstd'] | None
 # These models mirror the structure of config.yaml exactly.
 # Each field includes validation rules to catch configuration errors early.
 
+
 class EfsSection(BaseModel):
     """
     Schema for the 'efs' section of config.yaml.
@@ -62,6 +63,7 @@ class EfsSection(BaseModel):
     - In production, consider loading credentials from environment variables or
       a secrets manager (AWS Secrets Manager, Azure Key Vault, etc.)
     """
+
     model_config = ConfigDict(extra='forbid')
     endpoint_url: HttpUrl = Field(
         ...,
@@ -101,6 +103,7 @@ class ClientSection(BaseModel):
     These settings directly impact reliability and performance when communicating with
     the EFS SOAP API.
     """
+
     model_config = ConfigDict(extra='forbid')
     request_timeout: tuple[float, float] = Field(
         default=(10.0, 30.0),
@@ -164,6 +167,7 @@ class PipelineSection(BaseModel):
     These settings control how the pipeline chunks time windows, handles late-arriving
     data, and manages API rate limits.
     """
+
     model_config = ConfigDict(extra='forbid')
     default_start_date: str = Field(
         ...,
@@ -225,6 +229,7 @@ class StorageSection(BaseModel):
     - Fast columnar read performance (for analytics)
     - Native datetime support (no string conversion needed)
     """
+
     model_config = ConfigDict(extra='forbid')
     parquet_file: Path = Field(
         ...,
@@ -266,6 +271,7 @@ class LoggingSection(BaseModel):
     the user executes the pipeline command. If you want logs in a specific location
     regardless of execution context, use an absolute path.
     """
+
     model_config = ConfigDict(extra='forbid')
     console_level: LogLevelName | int = Field(
         default='INFO',
@@ -384,6 +390,7 @@ class FuelSyncConfig(BaseModel):
         timeout = config.client.request_timeout
         log_level = config.logging.get_console_level_int()
     """
+
     model_config = ConfigDict(extra='forbid')
     efs: EfsSection
     client: ClientSection
@@ -518,7 +525,7 @@ def load_config(config_path: Path | str | None = None) -> FuelSyncConfig:
     # just a nested dictionary of raw Python objects (strings, ints, lists, etc.).
     try:
         with open(path_obj, encoding='utf-8') as f:
-            raw_config:dict[str, Any] = yaml.safe_load(f)
+            raw_config: dict[str, Any] = yaml.safe_load(f)
     except yaml.YAMLError as e:
         logger.error(f'Failed to parse YAML config file: {e}')
         raise
