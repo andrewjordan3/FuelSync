@@ -17,7 +17,7 @@ from requests import Response
 from .efs_client import EfsClient
 from .models import GetMCTransExtLocV2Request
 from .response_models import GetMCTransExtLocV2Response
-from .utils import FuelSyncConfig, load_config, setup_logger
+from .utils import FuelSyncConfig, ParquetFileHandler, load_config, setup_logger
 
 # Set up module-level logger
 logger: logging.Logger = logging.getLogger(__name__)
@@ -74,6 +74,9 @@ class FuelPipeline:
         setup_logger(config=self.config)
         self.parquet_file_path: Path = Path(self.config.storage.parquet_file)
 
+        self.file_handler = ParquetFileHandler(self.config.storage)
+        self.dataframe: pd.DataFrame | None = self.file_handler.load()
+
         # Initial instantiation of efs client
         self.efs_client = EfsClient(config=self.config)
 
@@ -109,41 +112,35 @@ class FuelPipeline:
         """
         Inspect the existing Parquet file to find the most recent transaction date.
 
-        This method is optimized to read only the 'transaction_date' column
-        to minimize I/O overhead on large datasets.
-
         Returns:
             datetime | None: The maximum transaction timestamp found in the file,
                              converted to a timezone-aware (UTC) Python datetime object.
                              Returns None if the file does not exist or is empty.
         """
-        if not self.parquet_file_path.exists():
+        # 1. Check if we have data in memory (loaded via __init__)
+        if self.dataframe is None or self.dataframe.empty:
             logger.debug(
-                f'Parquet file not found at {self.parquet_file_path}. Treating as initial run.'
+                'No historical data currently loaded. Treating as initial run.'
             )
             return None
 
         try:
-            # Read only the specific column needed to determine the watermark
-            logger.debug(f'Reading existing data schema from {self.parquet_file_path}')
-            existing_data_date_column: pd.DataFrame = pd.read_parquet(  # pyright: ignore[reportUnknownMemberType]
-                self.parquet_file_path, columns=['transaction_date']
-            )
-
-            if existing_data_date_column.empty:
-                logger.debug('Parquet file exists but contains no rows.')
+            # 2. Validate column existence
+            if 'transaction_date' not in self.dataframe.columns:
+                logger.warning(
+                    'Historical data exists but is missing "transaction_date" column.'
+                )
                 return None
 
-            # Extract the maximum date
-            max_timestamp: pd.Timestamp = existing_data_date_column[
-                'transaction_date'
-            ].max()
+            # 3. Extract maximum date
+            # Pandas max() on a datetime column returns a Timestamp
+            max_timestamp: pd.Timestamp = self.dataframe['transaction_date'].max()
 
             if pd.isna(max_timestamp):
-                logger.debug('Max date in Parquet file is NaT (Not a Time).')
+                logger.debug('Max date in history is NaT (Not a Time).')
                 return None
 
-            # Convert pandas Timestamp to Python datetime and ensure UTC
+            # 4. Convert to UTC datetime
             # The EFS API works in UTC, so we standardize on that.
             latest_datetime: datetime = pd.to_datetime(max_timestamp).to_pydatetime()
             if latest_datetime.tzinfo is None:
@@ -153,9 +150,8 @@ class FuelPipeline:
             return latest_datetime
 
         except Exception as e:
-            # Log warning but do not crash; returning None triggers a full/default load
             logger.warning(
-                f'Failed to read watermark from existing Parquet file: {e}. '
+                f'Failed to read watermark from historical data: {e}. '
                 f'Pipeline will default to initial start date.'
             )
             return None
@@ -434,24 +430,18 @@ class FuelPipeline:
             new_dataframes, ignore_index=True
         )
 
-        # Load history if it exists
-        if self.parquet_file_path.exists():
-            logger.debug(
-                f'Loading existing historical data from {self.parquet_file_path}'
-            )
-            historical_data: pd.DataFrame = pd.read_parquet(self.parquet_file_path)  # pyright: ignore[reportUnknownMemberType]
+        # Use cached historical data (State held in self.dataframe)
+        if self.dataframe is not None:
+            logger.debug('Merging new data with existing history.')
             final_dataset: pd.DataFrame = pd.concat(
-                [historical_data, newly_retrieved_data], ignore_index=True
+                [self.dataframe, newly_retrieved_data], ignore_index=True
             )
         else:
-            logger.debug(
-                'No history file found. Creating new dataset from retrieved data.'
-            )
+            logger.debug('No history found. Creating new dataset from retrieved data.')
             final_dataset = newly_retrieved_data
 
         # Deduplication Logic
         # Sort by date/id first to ensure deterministic order.
-        # keep='last' ensures we retain the most recently downloaded version of a record.
         row_count_before: int = len(final_dataset)
 
         final_dataset.sort_values(
@@ -469,23 +459,20 @@ class FuelPipeline:
             f'Deduplication complete. Removed {duplicates_removed} duplicate records.'
         )
 
+        # Update the cache with the final result
+        # This ensures subsequent calls in the same session see the new state
+        self.dataframe = final_dataset
+
         # Save to disk (or skip if dry run)
         if dry_run:
             logger.info(
                 f'[DRY RUN] Would have saved {row_count_after} total records '
-                f'to {self.parquet_file_path}. Skipping write operation.'
+                f'to {self.config.storage.parquet_file}. Skipping write operation.'
             )
         else:
-            logger.info(
-                f'Saving synchronized dataset ({row_count_after} total records) '
-                f'to {self.parquet_file_path}'
-            )
-            self.parquet_file_path.parent.mkdir(parents=True, exist_ok=True)
-            final_dataset.to_parquet(
-                self.parquet_file_path,
-                index=False,
-                compression=self.config.storage.compression,
-            )
+            # Delegate saving to the storage handler
+            # Note: Logging for the save operation happens inside the handler
+            self.file_handler.save(final_dataset)
 
     def cleanup(self) -> None:
         """
