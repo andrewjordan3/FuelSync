@@ -19,6 +19,9 @@ from .models import GetMCTransExtLocV2Request
 from .response_models import GetMCTransExtLocV2Response
 from .utils import FuelSyncConfig, load_config, setup_logger
 
+# Set up module-level logger
+logger: logging.Logger = logging.getLogger(__name__)
+
 
 class FuelPipeline:
     """
@@ -67,8 +70,8 @@ class FuelPipeline:
         # prevents reloading it for every batch.
         self.config: FuelSyncConfig = load_config(client_config_path)
 
-        # Begin the module level logger and populate the parquet file path
-        self.logger: logging.Logger = setup_logger(config=self.config)
+        # Configure the package-level logger (all module loggers inherit from it)
+        setup_logger(config=self.config)
         self.parquet_file_path: Path = Path(self.config.storage.parquet_file)
 
         # Initial instantiation of efs client
@@ -93,14 +96,14 @@ class FuelPipeline:
             Exception: If client recreation fails, indicating a fatal issue
                       that should abort the pipeline.
         """
-        self.logger.warning('Recreating EFS client with fresh session')
+        logger.warning('Recreating EFS client with fresh session')
 
         # Use our cleanup method to logout
         self.cleanup()
 
         # Create new authenticated client
         self.efs_client = EfsClient(config=self.config)
-        self.logger.info('New EFS client session established')
+        logger.info('New EFS client session established')
 
     def _retrieve_latest_transaction_timestamp(self) -> datetime | None:
         """
@@ -115,20 +118,20 @@ class FuelPipeline:
                              Returns None if the file does not exist or is empty.
         """
         if not self.parquet_file_path.exists():
-            self.logger.debug(
+            logger.debug(
                 f'Parquet file not found at {self.parquet_file_path}. Treating as initial run.'
             )
             return None
 
         try:
             # Read only the specific column needed to determine the watermark
-            self.logger.debug(f'Reading existing data schema from {self.parquet_file_path}')
+            logger.debug(f'Reading existing data schema from {self.parquet_file_path}')
             existing_data_date_column: pd.DataFrame = pd.read_parquet(  # pyright: ignore[reportUnknownMemberType]
                 self.parquet_file_path, columns=['transaction_date']
             )
 
             if existing_data_date_column.empty:
-                self.logger.debug('Parquet file exists but contains no rows.')
+                logger.debug('Parquet file exists but contains no rows.')
                 return None
 
             # Extract the maximum date
@@ -137,7 +140,7 @@ class FuelPipeline:
             ].max()
 
             if pd.isna(max_timestamp):
-                self.logger.debug('Max date in Parquet file is NaT (Not a Time).')
+                logger.debug('Max date in Parquet file is NaT (Not a Time).')
                 return None
 
             # Convert pandas Timestamp to Python datetime and ensure UTC
@@ -146,12 +149,12 @@ class FuelPipeline:
             if latest_datetime.tzinfo is None:
                 latest_datetime = latest_datetime.replace(tzinfo=UTC)
 
-            self.logger.debug(f'Latest transaction timestamp found: {latest_datetime}')
+            logger.debug(f'Latest transaction timestamp found: {latest_datetime}')
             return latest_datetime
 
         except Exception as e:
             # Log warning but do not crash; returning None triggers a full/default load
-            self.logger.warning(
+            logger.warning(
                 f'Failed to read watermark from existing Parquet file: {e}. '
                 f'Pipeline will default to initial start date.'
             )
@@ -185,7 +188,7 @@ class FuelPipeline:
                 start_date = last_known_timestamp - timedelta(
                     days=self.config.pipeline.lookback_days
                 )
-                self.logger.info(
+                logger.info(
                     f'Resuming incremental sync. '
                     f'Last known data: {last_known_timestamp.date()}. '
                     f'Lookback buffer: {self.config.pipeline.lookback_days} days. '
@@ -206,7 +209,7 @@ class FuelPipeline:
                     inception_date, datetime.min.time(), tzinfo=UTC
                 )
 
-                self.logger.info(
+                logger.info(
                     f'No existing history found. Performing initial load from {start_date.date()}'
                 )
 
@@ -255,10 +258,10 @@ class FuelPipeline:
 
         if parsed_response.transaction_count > 0:
             batch_df: pd.DataFrame = parsed_response.to_dataframe()
-            self.logger.debug(f'  Batch retrieved {len(batch_df)} records.')
+            logger.debug(f'  Batch retrieved {len(batch_df)} records.')
             return batch_df
         else:
-            self.logger.debug('  Batch returned no records.')
+            logger.debug('  Batch returned no records.')
             return None
 
     def _fetch_batch_with_retry(
@@ -291,7 +294,7 @@ class FuelPipeline:
             Exception: Re-raises the last exception encountered if all retry attempts
                       are exhausted, which signals the pipeline to abort.
         """
-        self.logger.debug(f'Processing batch: {batch_start} -> {batch_end}')
+        logger.debug(f'Processing batch: {batch_start} -> {batch_end}')
 
         max_retries: int = self.config.client.max_retries
         backoff_factor: float = self.config.client.retry_backoff_factor
@@ -301,14 +304,14 @@ class FuelPipeline:
                 return self._fetch_single_batch(batch_start, batch_end)
 
             except Exception as e:
-                self.logger.warning(
+                logger.warning(
                     f'Error fetching batch {batch_start} '
                     f'(Attempt {attempt + 1}/{max_retries}): {e}'
                 )
 
                 # Check if we've exhausted all retry attempts
                 if attempt == max_retries - 1:
-                    self.logger.error(
+                    logger.error(
                         f'Max retries exceeded for batch starting {batch_start}. '
                         f'Aborting pipeline.'
                     )
@@ -319,14 +322,14 @@ class FuelPipeline:
                 # issues. Recreate the client on ANY error to ensure session problems
                 # are resolved. This adds ~2 seconds per failed batch, which is
                 # acceptable for error cases.
-                self.logger.info(
+                logger.info(
                     'Recreating EFS client before retry (defensive recovery '
                     'due to generic SOAP error responses)'
                 )
                 try:
                     self._recreate_client()
                 except Exception as recreate_error:
-                    self.logger.error(
+                    logger.error(
                         f'Failed to recreate client: {recreate_error}. '
                         f'Will retry with existing client after backoff.'
                     )
@@ -334,7 +337,7 @@ class FuelPipeline:
                 # Exponential backoff: wait progressively longer between retries
                 # (1s, 2s, 4s for default max_retries=3)
                 sleep_seconds: float = backoff_factor**attempt
-                self.logger.info(
+                logger.info(
                     f'Backing off for {sleep_seconds} seconds before '
                     f'retrying with fresh session...'
                 )
@@ -423,17 +426,17 @@ class FuelPipeline:
             new_dataframes: List of DataFrames downloaded from the API.
         """
         if not new_dataframes:
-            self.logger.info('Pipeline run finished. No new data found.')
+            logger.info('Pipeline run finished. No new data found.')
             return
 
-        self.logger.debug('Consolidating downloaded batches...')
+        logger.debug('Consolidating downloaded batches...')
         newly_retrieved_data: pd.DataFrame = pd.concat(
             new_dataframes, ignore_index=True
         )
 
         # Load history if it exists
         if self.parquet_file_path.exists():
-            self.logger.debug(
+            logger.debug(
                 f'Loading existing historical data from {self.parquet_file_path}'
             )
             historical_data: pd.DataFrame = pd.read_parquet(self.parquet_file_path)  # pyright: ignore[reportUnknownMemberType]
@@ -441,7 +444,7 @@ class FuelPipeline:
                 [historical_data, newly_retrieved_data], ignore_index=True
             )
         else:
-            self.logger.debug(
+            logger.debug(
                 'No history file found. Creating new dataset from retrieved data.'
             )
             final_dataset = newly_retrieved_data
@@ -462,18 +465,18 @@ class FuelPipeline:
         row_count_after: int = len(final_dataset)
         duplicates_removed: int = row_count_before - row_count_after
 
-        self.logger.debug(
+        logger.debug(
             f'Deduplication complete. Removed {duplicates_removed} duplicate records.'
         )
 
         # Save to disk (or skip if dry run)
         if dry_run:
-            self.logger.info(
+            logger.info(
                 f'[DRY RUN] Would have saved {row_count_after} total records '
                 f'to {self.parquet_file_path}. Skipping write operation.'
             )
         else:
-            self.logger.info(
+            logger.info(
                 f'Saving synchronized dataset ({row_count_after} total records) '
                 f'to {self.parquet_file_path}'
             )
@@ -492,12 +495,12 @@ class FuelPipeline:
         either after successful completion or as part of error cleanup.
         It ensures the EFS session is properly terminated.
         """
-        self.logger.debug('Cleaning up current EFS client session')
+        logger.debug('Cleaning up current EFS client session')
         try:
             self.efs_client.logout()
-            self.logger.info('EFS client session terminated')
+            logger.info('EFS client session terminated')
         except Exception as cleanup_error:
-            self.logger.warning(
+            logger.warning(
                 f'Error during cleanup (session may already be invalid): {cleanup_error}'
             )
 
@@ -520,7 +523,7 @@ class FuelPipeline:
                                Defaults to the current UTC time.
             dry_run: If True, performs all operations EXCEPT saving the Parquet file.
         """
-        self.logger.info(
+        logger.info(
             f'Starting EFS transaction synchronization pipeline (Dry Run: {dry_run}).'
         )
 
@@ -530,7 +533,7 @@ class FuelPipeline:
             start_timestamp: datetime = self._determine_start_timestamp(explicit_start_date)
 
             if start_timestamp >= end_timestamp:
-                self.logger.info(
+                logger.info(
                     'Start date is in the future or after end date. No synchronization needed.'
                 )
                 return
@@ -544,7 +547,7 @@ class FuelPipeline:
             # 3. Process and Persist (Transform & Load)
             self._merge_deduplicate_and_save(downloaded_data, dry_run)
 
-            self.logger.info('Pipeline synchronization completed successfully.')
+            logger.info('Pipeline synchronization completed successfully.')
 
         finally:
             # Always cleanup the client session, even if an error occurred
