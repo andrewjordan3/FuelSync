@@ -2,11 +2,12 @@
 
 import html
 import logging
-import xml.etree.ElementTree as ET
 
 import requests
+from lxml import etree
 
 from .config_loader import FuelSyncConfig
+from .xml_parser import check_for_soap_fault, parse_soap_response
 
 # Set up a logger for this module
 logger: logging.Logger = logging.getLogger(__name__)
@@ -116,7 +117,7 @@ def login_to_efs(config: FuelSyncConfig) -> str:
     # ========================================================================
     # If we reach here, HTTP succeeded (200 OK). Parse the response text
     # into an XML tree structure for inspection.
-    response_xml_root: ET.Element = ET.fromstring(soap_response.text)
+    response_xml_root: etree.Element = parse_soap_response(soap_response.text)
 
     # ========================================================================
     # STEP 6: Check for SOAP Faults (Application-Level Errors)
@@ -124,23 +125,10 @@ def login_to_efs(config: FuelSyncConfig) -> str:
     # SOAP Faults are the protocol's way of reporting application errors
     # (like "Invalid Username" or "Account Locked") while still returning
     # HTTP 200 OK. We must explicitly check for the <Fault> element.
-    # The namespace prefix is required because SOAP uses XML namespaces.
-    soap_fault_element: ET.Element | None = response_xml_root.find(
-        './/{http://schemas.xmlsoap.org/soap/envelope/}Fault'
-    )
-
-    if soap_fault_element is not None:
-        # Extract the human-readable error message from <faultstring>.
-        # This element is required by the SOAP spec and should always exist
-        # in a Fault, but we provide a fallback just in case.
-        fault_message: str = (
-            soap_fault_element.findtext('faultstring') or 'Unknown SOAP Fault'
-        )
-        # Provide detailed context in the error message for easier debugging.
-        raise RuntimeError(
-            f'EFS SOAP login failed with Fault: {fault_message}\n'
-            f'This typically indicates invalid credentials or account issues.'
-        )
+    # Use the project's standardized Fault checker.
+    # This checks for the <Fault> element in the SOAP namespace and raises
+    # a RuntimeError with the fault string if found.
+    check_for_soap_fault(response_xml_root)
 
     # ========================================================================
     # STEP 7: Extract the Session Token from the Response
@@ -148,7 +136,7 @@ def login_to_efs(config: FuelSyncConfig) -> str:
     # If we reach here, the login succeeded. The session token should be
     # in a <result> element. The './/' prefix means "search anywhere in
     # the document" rather than requiring an exact path.
-    session_token_element: ET.Element | None = response_xml_root.find('.//result')
+    session_token_element: etree.Element | None = response_xml_root.find('.//result')
 
     # Validate that we found the element and it contains non-empty text.
     # Using the walrus operator := to both assign and check in one step.
