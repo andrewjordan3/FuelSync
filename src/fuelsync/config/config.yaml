@@ -1,0 +1,78 @@
+# fuelsync/config/config.yaml
+
+# =============================================================================
+# FuelSync Configuration
+# =============================================================================
+# This file controls the behavior of the EFS transaction synchronization pipeline.
+# It separates operational settings (timeouts, retries) from business logic
+# (start dates, lookback windows).
+
+efs:
+  # --- API Endpoint ---
+  # Uncomment the appropriate URL for your target environment.
+  # CAUTION: Production data requires the Production URL.
+  endpoint_url: "https://ws.efsllc.com/axis2/services/CardManagementWS/" # Production
+  # endpoint_url: "https://ws.partner.efsllc.com/axis2/services/CardManagementWS/" # QA / Test
+
+  # --- Credentials ---
+  # The username and password for the EFS SOAP API.
+  # Note: For production deployments, consider injecting these via environment variables.
+  username: ""
+  password: ""
+
+client:
+  # --- Network Timeouts ---
+  # format: [connect_timeout, read_timeout] in seconds.
+  # - connect: Max time to wait for the server to accept the connection.
+  # - read: Max time to wait for the server to send bytes (the SOAP response).
+  #   EFS responses can be slow; do not set 'read' lower than 30s.
+  request_timeout: [10, 30]
+
+  # --- Security ---
+  # Set to 'true' for Production/QA.
+  # Only set to 'false' if debugging local proxy/ZScaler SSL interception issues.
+  verify_ssl: true
+
+  # --- Resilience ---
+  # Retry strategy for failed HTTP requests (e.g., 503 errors or timeouts).
+  # Exponential backoff formula: sleep = retry_backoff_factor ^ attempt
+  max_retries: 3
+  retry_backoff_factor: 2
+
+pipeline:
+  # --- Inception Date ---
+  # The absolute earliest date the pipeline will check if no local history exists.
+  # Set this to the date when your organization first started using WEX/EFS fuel cards.
+  default_start_date: "2024-01-01"
+
+  # --- Batching ---
+  # The size of the time window for a single SOAP API call.
+  # KEEP SMALL (1 day). Large windows cause massive XML responses that consume
+  # excessive RAM during parsing and increase the risk of API timeouts.
+  batch_size_days: 1
+
+  # --- Data Consistency ---
+  # How far back to re-query relative to the last known data.
+  # This captures "late arriving" transactions that vendors posted days after
+  # the transaction actually occurred.
+  lookback_days: 7
+
+  # --- Rate Limiting ---
+  # Sleep time (in seconds) between batch requests to be a "polite" API citizen.
+  request_delay_seconds: 0.5
+
+storage:
+  # Local path for the persistent data store.
+  parquet_file: "data/transactions.parquet"
+
+  # Compression algorithm. 'snappy' is a good balance of speed and size.
+  # Options: 'snappy', 'gzip', 'brotli', or 'none'.
+  compression: "snappy"
+
+logging:
+  # Application log file location.
+  file_path: "fuelsync.log"
+
+  # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  console_level: "INFO" # What you see in the terminal
+  file_level: "DEBUG" # What gets saved for troubleshooting
