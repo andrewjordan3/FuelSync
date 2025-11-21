@@ -589,7 +589,7 @@ class GetMCTransExtLocV2Response(BaseModel):
         # Apply datetime conversion to columns
         for col in datetime_cols:
             if col in df.columns:
-                df[col] = pd.to_datetime(df[col])
+                df[col] = pd.to_datetime(df[col], utc=True).dt.tz_localize(None)
 
         # Apply fuel type name mapping to column
         if 'fuel_type' in df.columns:
