@@ -18,7 +18,7 @@ Key Design Decisions:
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
 from pydantic import (
@@ -355,7 +355,7 @@ class LoggingSection(BaseModel):
         """
         if isinstance(self.console_level, int):
             return self.console_level
-        return getattr(logging, self.console_level)
+        return cast(int, getattr(logging, self.console_level))
 
     def get_file_level_int(self) -> int | None:
         """
@@ -368,7 +368,7 @@ class LoggingSection(BaseModel):
             return None
         if isinstance(self.file_level, int):
             return self.file_level
-        return getattr(logging, self.file_level)
+        return cast(int, getattr(logging, self.file_level))
 
 
 class FuelSyncConfig(BaseModel):

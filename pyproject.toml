@@ -46,12 +46,12 @@ dependencies = [
     "requests>=2.31.0",
     "lxml>=5.0.0",
     "jinja2>=3.1.0",
+    "pandas>=2.0.0",
+    "pyarrow>=14.0.0",
 ]
 
 # Optional dependencies
 [project.optional-dependencies]
-# Data analysis tools
-pandas = ["pandas>=2.0.0"]
 
 # Development tools
 dev = [
@@ -61,10 +61,11 @@ dev = [
     "pytest-cov>=4.1.0",
     "types-pyyaml>=6.0.0",
     "types-requests>=2.31.0",
+    "types-lxml>=2025.8.25"
 ]
 
 # All optional dependencies
-all = ["fuelsync[pandas]", "fuelsync[dev]"]
+all = ["fuelsync[dev]"]
 
 [project.urls]
 Homepage = "https://github.com/andrewjordan3/FuelSync"
@@ -124,8 +125,6 @@ select = [
 ignore = [
     "E501",    # Line too long (handled by ruff format)
     "E203",    # Whitespace before ':' (conflicts with formatter)
-    "PLR0913", # Too many arguments to function call
-    "PLR2004", # Magic value used in comparison
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -139,16 +138,17 @@ line-ending = "auto"
 
 [tool.ruff.lint.isort]
 known-first-party = ["fuelsync"]
+combine-as-imports = true
 
 ###############################################################################
 # MYPY - TYPE CHECKING
 ###############################################################################
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 check_untyped_defs = true
 no_implicit_optional = true
 warn_redundant_casts = true
@@ -159,8 +159,19 @@ strict_equality = true
 
 # Ignore missing imports for third-party packages without type stubs
 [[tool.mypy.overrides]]
-module = ["lxml.*", "truststore.*"]
+module = ["lxml.*", "pandas.*", "pyarrow.*"]
 ignore_missing_imports = true
+
+###############################################################################
+# PYRIGHT - FOR VS CODE PYLANCE
+###############################################################################
+[tool.pyright]
+include = ["src"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.*"]
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+reportUnknownMemberType = false # Often needed for libraries like lxml/pandas
+reportUnknownArgumentType = false
 
 ###############################################################################
 # PYTEST - TESTING

@@ -9,9 +9,7 @@ count and total amount for a given date range.
 import logging
 from typing import Any
 
-from lxml import (
-    etree,  # pyright: ignore[reportUnknownVariableType, reportAttributeAccessIssue]
-)
+from lxml import etree
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..utils import (
@@ -42,7 +40,7 @@ class WSTransSummary(BaseModel):
     tran_total: float | None = Field(None, alias='tranTotal')
 
     @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSTransSummary':
+    def from_xml_element(cls, element: etree.Element) -> 'WSTransSummary':
         """
         Parse a <value> XML element into a WSMCTransExtLocV2 instance.
 
@@ -108,16 +106,16 @@ class TransSummaryResponse(BaseModel):
         logger.debug('Parsing SOAP response for TransSummaryResponse')
 
         # 1. Parse string to XML
-        root: etree._Element = parse_soap_response(xml_string)
+        root: etree.Element = parse_soap_response(xml_string)
 
         # 2. Check for SOAP:Fault
         check_for_soap_fault(root)
 
         # 3. Get the <soap:Body>
-        body: etree._Element = extract_soap_body(root)
+        body: etree.Element = extract_soap_body(root)
 
         # 4. Find the <result> element containing the summary
-        result_element = body.find('.//result')
+        result_element: etree.Element | None = body.find('.//result')
 
         if result_element is None:
             logger.warning('No <result> element found in the response body.')

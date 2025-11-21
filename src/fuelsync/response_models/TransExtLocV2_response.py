@@ -6,8 +6,8 @@ Each model represents a data structure returned by the EFS API.
 They are responsible for parsing the XML response elements into
 type-safe Python objects.
 """
+# pyright: reportUnknownVariableType=false
 
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportAttributeAccessIssue=false, reportUnknownParameterType=false, reportUnknownArgumentType=false
 import logging
 from datetime import datetime
 from typing import Any
@@ -389,7 +389,7 @@ class WSMCTransExtLocV2(BaseModel):
     trans_taxes: list[WSTransTaxes] = Field(default_factory=list, alias='transTaxes')
 
     @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSMCTransExtLocV2':
+    def from_xml_element(cls, element: etree.Element) -> 'WSMCTransExtLocV2':
         """
         Parse a <value> XML element into a WSMCTransExtLocV2 instance.
 
@@ -449,26 +449,26 @@ class GetMCTransExtLocV2Response(BaseModel):
         logger.debug('Parsing SOAP response for GetMCTransExtLocV2Response')
 
         # 1. Parse string to XML
-        root: etree._Element = parse_soap_response(xml_string)
+        root: etree.Element = parse_soap_response(xml_string)
 
         # 2. Check for SOAP:Fault
         check_for_soap_fault(root)
 
         # 3. Get the <soap:Body>
-        body: etree._Element = extract_soap_body(root)
+        body: etree.Element = extract_soap_body(root)
 
         # 4. Find all transaction elements and parse them
         transactions: list[WSMCTransExtLocV2] = []
 
         # Based on the XML structure, the repeating transaction element is <value>
         # First find the result element, then get its direct value children
-        result_element: etree._Element = body.find('.//result')
+        result_element: etree.Element | None = body.find('.//result')
         if result_element is None:
             logger.warning('No <result> element found in the response body.')
             return cls(transactions=[])
 
         # Get only the direct children named 'value'
-        result_elements: list[etree._Element] = result_element.findall('./value')
+        result_elements: list[etree.Element] = result_element.findall('./value')
 
         if not result_elements:
             logger.warning('No <value> elements found in the response body.')
