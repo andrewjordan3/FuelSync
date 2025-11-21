@@ -37,7 +37,6 @@ pip install -r requirements.txt
 - `requests` - HTTP client
 - `lxml` - XML parsing
 - `jinja2` - Template rendering for SOAP envelopes
-- `truststore` - SSL certificate handling
 
 **Optional dependencies:**
 - `pandas` - For DataFrame conversion (recommended for data analysis)
@@ -45,23 +44,62 @@ pip install -r requirements.txt
 ## Configuration
 
 Create a `config.yaml` file in `src/fuelsync/config/`:
+
 ```yaml
-EFS_ENDPOINT_URL: "https://api.example.com/soap"
-EFS_USERNAME: "your_username"
-EFS_PASSWORD: "your_password"
-REQUEST_TIMEOUT: 30
-VERIFY_SSL_CERTIFICATE: true
+efs:
+  endpoint_url: "https://ws.efsllc.com/axis2/services/CardManagementWS/"
+  username: "your_username"
+  password: "your_password"
+
+client:
+  request_timeout: [10, 30]  # [connect_timeout, read_timeout] in seconds
+  verify_ssl: true
+  max_retries: 3
+  retry_backoff_factor: 2
+
+pipeline:
+  default_start_date: "2025-08-01"  # ISO format: YYYY-MM-DD
+  batch_size_days: 1
+  lookback_days: 7
+  request_delay_seconds: 0.5
+
+storage:
+  parquet_file: "data/transactions.parquet"
+  compression: "snappy"  # Options: snappy, gzip, brotli, lz4, zstd
+
+logging:
+  console_level: "INFO"   # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file_level: "DEBUG"
+  file_path: "fuelsync.log"
 ```
 
-**Configuration Options:**
+**Configuration Sections:**
 
-| Option | Type | Description | Required |
-|--------|------|-------------|----------|
-| `EFS_ENDPOINT_URL` | URL | SOAP API endpoint | Yes |
-| `EFS_USERNAME` | string | API username | Yes |
-| `EFS_PASSWORD` | string | API password | Yes |
-| `REQUEST_TIMEOUT` | int or tuple | Request timeout in seconds | Yes |
-| `VERIFY_SSL_CERTIFICATE` | boolean | Enable SSL verification | Yes |
+### EFS API Settings
+- `endpoint_url`: SOAP API endpoint (production or QA)
+- `username`: API username
+- `password`: API password
+
+### Client Settings
+- `request_timeout`: `[connect, read]` timeout in seconds
+- `verify_ssl`: Enable SSL certificate verification (always `true` in production)
+- `max_retries`: Number of retry attempts for failed requests
+- `retry_backoff_factor`: Exponential backoff multiplier (sleep = factor ^ attempt)
+
+### Pipeline Settings
+- `default_start_date`: Earliest date to sync if no history exists (ISO format)
+- `batch_size_days`: Days per API request (keep at 1 to avoid timeouts)
+- `lookback_days`: Days to overlap for capturing late-arriving transactions
+- `request_delay_seconds`: Rate limiting delay between batches
+
+### Storage Settings
+- `parquet_file`: Local path for persistent transaction data
+- `compression`: Compression algorithm (snappy recommended for speed/size balance)
+
+### Logging Settings
+- `console_level`: Log level for terminal output
+- `file_level`: Log level for file output
+- `file_path`: Path to log file
 
 ## Quick Start
 
@@ -221,45 +259,63 @@ formatted = format_for_soap(d)
 
 ### Logging
 
-Configure logging to monitor API operations:
+FuelSync uses Python's standard logging module with a hierarchical logger structure. Configure the package-level logger once, and all modules will inherit the configuration:
+
 ```python
-from fuelsync.utils import setup_logger
+from fuelsync.utils import setup_logger, load_config
 import logging
 
-# Log to console at DEBUG level
-logger = setup_logger(logging_level=logging.DEBUG)
+# Simple console logging at DEBUG level
+setup_logger(logging_level=logging.DEBUG)
 
-# Log to file
-from pathlib import Path
-logger = setup_logger(
-    logging_level=logging.INFO,
-    log_file_path=Path('logs/fuelsync.log')
-)
+# Or use configuration from config.yaml (recommended)
+config = load_config()
+setup_logger(config=config)
+
+# Each module creates its own logger that inherits the configuration
+logger = logging.getLogger(__name__)
+logger.info("This will use the configured format and handlers")
+```
+
+All log messages show the originating module in the format:
+```
+2025-11-21 10:30:45 - INFO     - [fuelsync.pipeline] - Starting synchronization
 ```
 
 ## Project Structure
 ```
-fuelsync/
-├── config/
-│   └── config.yaml           # API configuration
-├── response_models/          # Response Pydantic models
-│   ├── TransExtLocV2_response.py
-│   ├── transSummary_response.py
-│   └── getTranRejects_response.py
-├── templates/                # Jinja2 SOAP templates
-│   ├── getMCTransExtLocV2.xml
-│   ├── transSummaryRequest.xml
-│   └── getTranRejects.xml
-├── utils/                    # Utility functions
-│   ├── config_loader.py      # Configuration loading
-│   ├── datetime_utils.py     # Date formatting
-│   ├── logger.py             # Logging setup
-│   ├── login.py              # Authentication
-│   ├── model_tools.py        # XML parsing helpers
-│   └── xml_parser.py         # SOAP XML utilities
-├── efs_client.py             # Main API client
-├── models.py                 # Request Pydantic models
-└── pipeline.py               # Data processing pipeline
+FuelSync/
+├── src/
+│   └── fuelsync/
+│       ├── config/
+│       │   └── config.yaml                    # Configuration file
+│       ├── response_models/                   # Response Pydantic models
+│       │   ├── __init__.py
+│       │   ├── TransExtLocV2_response.py      # Detailed transaction response
+│       │   ├── transSummary_response.py       # Summary response
+│       │   ├── getTranRejects_response.py     # Rejected transactions
+│       │   └── card_summary_response.py       # Card summary response
+│       ├── templates/                         # Jinja2 SOAP templates
+│       │   ├── getMCTransExtLocV2.xml
+│       │   ├── transSummaryRequest.xml
+│       │   ├── getTranRejects.xml
+│       │   ├── logout.xml
+│       │   └── ...
+│       ├── utils/                             # Utility functions
+│       │   ├── __init__.py
+│       │   ├── config_loader.py               # YAML config loading & validation
+│       │   ├── datetime_utils.py              # Date/time formatting for SOAP
+│       │   ├── logger.py                      # Centralized logging setup
+│       │   ├── login.py                       # EFS authentication
+│       │   ├── model_tools.py                 # XML parsing helpers
+│       │   └── xml_parser.py                  # SOAP XML utilities
+│       ├── __init__.py                        # Package exports
+│       ├── efs_client.py                      # Main SOAP API client
+│       ├── models.py                          # Request Pydantic models
+│       └── pipeline.py                        # Incremental data sync pipeline
+├── pyproject.toml                             # Project metadata & dependencies
+├── README.md                                  # This file
+└── LICENSE                                    # MIT License
 ```
 
 ## Error Handling
@@ -400,13 +456,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 For issues, questions, or contributions, please open an issue on GitHub.
-
-## Changelog
-
-### Version 0.1.0 (2025-11-17)
-- Initial release
-- Support for getMCTransExtLocV2, transSummary, and getTranRejects operations
-- Type-safe request and response models
-- Comprehensive error handling and logging
-- DataFrame conversion for data analysis
-
