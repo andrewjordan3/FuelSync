@@ -95,13 +95,8 @@ class FuelPipeline:
         """
         self.logger.warning('Recreating EFS client with fresh session')
 
-        try:
-            # Attempt to logout the old session (may fail if session is already dead)
-            self.efs_client.logout()
-        except Exception as logout_error:
-            self.logger.debug(
-                f'Could not logout old session (may already be invalid): {logout_error}'
-            )
+        # Use our cleanup method to logout
+        self.cleanup()
 
         # Create new authenticated client
         self.efs_client = EfsClient(config=self.config)
@@ -497,7 +492,7 @@ class FuelPipeline:
         either after successful completion or as part of error cleanup.
         It ensures the EFS session is properly terminated.
         """
-        self.logger.debug('Cleaning up EFS client session')
+        self.logger.debug('Cleaning up current EFS client session')
         try:
             self.efs_client.logout()
             self.logger.info('EFS client session terminated')
