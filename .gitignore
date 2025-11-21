@@ -47,3 +47,14 @@ htmlcov/
 Thumbs.db
 *.swp
 *.swo
+
+# ---------------------------
+# Data files (project-specific)
+# ---------------------------
+data/
+*.parquet
+
+# ---------------------------
+# Log files
+# ---------------------------
+*.log

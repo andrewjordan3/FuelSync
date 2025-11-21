@@ -42,8 +42,8 @@ client:
 pipeline:
   # --- Inception Date ---
   # The absolute earliest date the pipeline will check if no local history exists.
-  # Please confirm no Wex/EFS transactions exist prior to this date.
-  default_start_date: "2025-08-01"
+  # Set this to the date when your organization first started using WEX/EFS fuel cards.
+  default_start_date: "2024-01-01"
 
   # --- Batching ---
   # The size of the time window for a single SOAP API call.

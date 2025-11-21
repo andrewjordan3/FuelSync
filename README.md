@@ -57,7 +57,7 @@ client:
   retry_backoff_factor: 2
 
 pipeline:
-  default_start_date: "2025-08-01"  # ISO format: YYYY-MM-DD
+  default_start_date: "2024-01-01"  # ISO format: YYYY-MM-DD
   batch_size_days: 1
   lookback_days: 7
   request_delay_seconds: 0.5
