@@ -36,18 +36,20 @@ def setup_logger(
                 - The 'logging_level' argument is ignored.
 
     Returns:
-        Logger instance for the calling module (via __name__).
+        The package-level logger ('fuelsync') for reference. All module-level
+        loggers created with logging.getLogger(__name__) will automatically
+        inherit this configuration.
 
     Example:
         >>> # Simple console logging (default INFO)
-        >>> logger = setup_logger()
+        >>> setup_logger()
 
         >>> # Simple console logging (DEBUG)
-        >>> logger = setup_logger(logging_level=logging.DEBUG)
+        >>> setup_logger(logging_level=logging.DEBUG)
 
         >>> # Full config (Console + File)
         >>> config = load_config()
-        >>> logger = setup_logger(config=config)
+        >>> setup_logger(config=config)
     """
     # Get the package-level logger (parent of all module loggers)
     package_logger: logging.Logger = logging.getLogger('fuelsync')
@@ -112,5 +114,7 @@ def setup_logger(
 
     package_logger.setLevel(effective_level)
 
-    # Return a module-specific logger for the caller
-    return logging.getLogger(__name__)
+    # Return the package logger for reference
+    # Module-level loggers (created with logging.getLogger(__name__))
+    # will automatically inherit this configuration
+    return package_logger
