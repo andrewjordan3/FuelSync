@@ -59,12 +59,12 @@ class TestGetMCTransExtLocV2Request:
     def test_missing_beg_date_raises_error(self) -> None:
         """Test that missing beg_date raises ValidationError."""
         with pytest.raises(ValidationError):
-            GetMCTransExtLocV2Request(end_date=datetime(2024, 11, 14, tzinfo=UTC)) # pyright: ignore[reportCallIssue]
+            GetMCTransExtLocV2Request(end_date=datetime(2024, 11, 14, tzinfo=UTC))  # pyright: ignore[reportCallIssue]
 
     def test_missing_end_date_raises_error(self) -> None:
         """Test that missing end_date raises ValidationError."""
         with pytest.raises(ValidationError):
-            GetMCTransExtLocV2Request(beg_date=datetime(2024, 11, 1, tzinfo=UTC)) # pyright: ignore[reportCallIssue]
+            GetMCTransExtLocV2Request(beg_date=datetime(2024, 11, 1, tzinfo=UTC))  # pyright: ignore[reportCallIssue]
 
     def test_to_soap_format_returns_dict(self) -> None:
         """Test that to_soap_format returns a dictionary."""
@@ -98,5 +98,5 @@ class TestGetMCTransExtLocV2Request:
         soap_format: dict[str, str | None] = request.to_soap_format()
 
         # Should have +00:00 timezone
-        assert '+00:00' in soap_format['begDate'] # pyright: ignore[reportOperatorIssue]
-        assert '+00:00' in soap_format['endDate'] # pyright: ignore[reportOperatorIssue]
+        assert '+00:00' in soap_format['begDate']  # pyright: ignore[reportOperatorIssue]
+        assert '+00:00' in soap_format['endDate']  # pyright: ignore[reportOperatorIssue]

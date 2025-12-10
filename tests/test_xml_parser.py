@@ -52,7 +52,7 @@ class TestExtractSoapBody:
         root: Element = parse_soap_response(xml)
         body: Element = extract_soap_body(root)
         assert body is not None
-        assert body.tag.endswith('Body') # pyright: ignore[reportArgumentType, reportAttributeAccessIssue]
+        assert body.tag.endswith('Body')  # pyright: ignore[reportArgumentType, reportAttributeAccessIssue]
 
     def test_extract_body_raises_error_when_missing(self) -> None:
         """Test that missing Body element raises ValueError."""
@@ -108,7 +108,9 @@ class TestCheckForSoapFault:
     </soapenv:Body>
 </soapenv:Envelope>"""
         root: Element = parse_soap_response(xml)
-        with pytest.raises(RuntimeError, match=r'SOAP Fault.*Unknown.*Something went wrong'):
+        with pytest.raises(
+            RuntimeError, match=r'SOAP Fault.*Unknown.*Something went wrong'
+        ):
             check_for_soap_fault(root)
 
     def test_fault_with_missing_faultstring(self) -> None:

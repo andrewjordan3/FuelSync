@@ -169,6 +169,8 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 
+exclude = ["tests/"]
+
 # Ignore missing imports for third-party packages without type stubs
 [[tool.mypy.overrides]]
 module = ["lxml.*", "pandas.*", "pyarrow.*"]
