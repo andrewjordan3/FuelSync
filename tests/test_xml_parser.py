@@ -2,6 +2,7 @@
 
 import pytest
 from lxml import etree
+from lxml.etree import Element
 
 from fuelsync.utils.xml_parser import (
     check_for_soap_fault,
@@ -21,9 +22,9 @@ class TestParseSoapResponse:
         <response>Success</response>
     </soapenv:Body>
 </soapenv:Envelope>"""
-        root = parse_soap_response(xml)
+        root: Element = parse_soap_response(xml)
         assert root is not None
-        assert isinstance(root, etree._Element)
+        assert isinstance(root, Element)
 
     def test_parse_malformed_xml_raises_error(self) -> None:
         """Test that malformed XML raises XMLSyntaxError."""
@@ -48,10 +49,10 @@ class TestExtractSoapBody:
         <response>Success</response>
     </soapenv:Body>
 </soapenv:Envelope>"""
-        root = parse_soap_response(xml)
-        body = extract_soap_body(root)
+        root: Element = parse_soap_response(xml)
+        body: Element = extract_soap_body(root)
         assert body is not None
-        assert body.tag.endswith('Body')
+        assert body.tag.endswith('Body') # pyright: ignore[reportArgumentType, reportAttributeAccessIssue]
 
     def test_extract_body_raises_error_when_missing(self) -> None:
         """Test that missing Body element raises ValueError."""
@@ -59,7 +60,7 @@ class TestExtractSoapBody:
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
     <soapenv:Header/>
 </soapenv:Envelope>"""
-        root = parse_soap_response(xml)
+        root: Element = parse_soap_response(xml)
         with pytest.raises(ValueError, match='No SOAP Body element found'):
             extract_soap_body(root)
 
@@ -75,7 +76,7 @@ class TestCheckForSoapFault:
         <response>Success</response>
     </soapenv:Body>
 </soapenv:Envelope>"""
-        root = parse_soap_response(xml)
+        root: Element = parse_soap_response(xml)
         # Should not raise
         check_for_soap_fault(root)
 
@@ -90,9 +91,9 @@ class TestCheckForSoapFault:
         </soapenv:Fault>
     </soapenv:Body>
 </soapenv:Envelope>"""
-        root = parse_soap_response(xml)
+        root: Element = parse_soap_response(xml)
         with pytest.raises(
-            RuntimeError, match='SOAP Fault.*Server.*Invalid credentials'
+            RuntimeError, match=r'SOAP Fault.*Server.*Invalid credentials'
         ):
             check_for_soap_fault(root)
 
@@ -106,8 +107,8 @@ class TestCheckForSoapFault:
         </soapenv:Fault>
     </soapenv:Body>
 </soapenv:Envelope>"""
-        root = parse_soap_response(xml)
-        with pytest.raises(RuntimeError, match='SOAP Fault.*Unknown.*Something went wrong'):
+        root: Element = parse_soap_response(xml)
+        with pytest.raises(RuntimeError, match=r'SOAP Fault.*Unknown.*Something went wrong'):
             check_for_soap_fault(root)
 
     def test_fault_with_missing_faultstring(self) -> None:
@@ -120,6 +121,6 @@ class TestCheckForSoapFault:
         </soapenv:Fault>
     </soapenv:Body>
 </soapenv:Envelope>"""
-        root = parse_soap_response(xml)
-        with pytest.raises(RuntimeError, match='SOAP Fault.*Client.*Unknown error'):
+        root: Element = parse_soap_response(xml)
+        with pytest.raises(RuntimeError, match=r'SOAP Fault.*Client.*Unknown error'):
             check_for_soap_fault(root)

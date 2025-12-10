@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import HttpUrl, ValidationError
 
 from fuelsync.utils.config_loader import FuelSyncConfig, load_config
 
@@ -13,7 +13,12 @@ class TestFuelSyncConfig:
 
     def test_valid_config_creation(self) -> None:
         """Test creating a valid config from dictionary."""
-        config_dict = {
+        config_dict: dict[
+            str,
+            dict[str, str]
+            | dict[str, list[int] | bool | int]
+            | dict[str, str | int | float],
+        ] = {
             'efs': {
                 'endpoint_url': 'https://test.example.com/api',
                 'username': 'test_user',
@@ -42,18 +47,18 @@ class TestFuelSyncConfig:
             },
         }
 
-        config = FuelSyncConfig.model_validate(config_dict)
+        config: FuelSyncConfig = FuelSyncConfig.model_validate(config_dict)
 
-        assert config.efs.endpoint_url == 'https://test.example.com/api'
+        assert config.efs.endpoint_url == HttpUrl('https://test.example.com/api')
         assert config.efs.username == 'test_user'
-        assert config.client.max_retries == 3
+        assert config.client.max_retries == 3  # noqa: PLR2004
         assert config.pipeline.batch_size_days == 1
         assert config.storage.compression == 'snappy'
         assert config.logging.console_level == 'INFO'
 
     def test_missing_required_field_raises_error(self) -> None:
         """Test that missing required fields raise ValidationError."""
-        config_dict = {
+        config_dict: dict[str, dict[str, str | list[int]]] = {
             'efs': {
                 'endpoint_url': 'https://test.example.com/api',
                 # Missing username and password
@@ -68,7 +73,9 @@ class TestFuelSyncConfig:
 
     def test_invalid_date_format_raises_error(self) -> None:
         """Test that invalid date format raises ValidationError."""
-        config_dict = {
+        config_dict: dict[
+            str, dict[str, str] | dict[str, list[int] | bool] | dict[str, str | int]
+        ] = {
             'efs': {
                 'endpoint_url': 'https://test.example.com/api',
                 'username': 'test_user',
@@ -99,11 +106,11 @@ class TestLoadConfig:
 
     def test_load_config_from_file(self, temp_config_file: Path) -> None:
         """Test loading config from a file."""
-        config = load_config(temp_config_file)
+        config: FuelSyncConfig = load_config(temp_config_file)
 
-        assert config.efs.endpoint_url == 'https://test.example.com/api'
+        assert config.efs.endpoint_url == HttpUrl('https://test.example.com/api')
         assert config.efs.username == 'test_user'
-        assert config.client.max_retries == 3
+        assert config.client.max_retries == 3  # noqa: PLR2004
 
     def test_load_config_file_not_found_raises_error(self) -> None:
         """Test that loading non-existent file raises FileNotFoundError."""
@@ -112,14 +119,16 @@ class TestLoadConfig:
 
     def test_load_config_with_string_path(self, temp_config_file: Path) -> None:
         """Test loading config with string path."""
-        config = load_config(str(temp_config_file))
+        config: FuelSyncConfig = load_config(str(temp_config_file))
 
         assert config.efs.username == 'test_user'
 
     def test_load_invalid_yaml_raises_error(self, tmp_path: Path) -> None:
         """Test that invalid YAML raises an error."""
-        invalid_yaml = tmp_path / 'invalid.yaml'
+        invalid_yaml: Path = tmp_path / 'invalid.yaml'
         invalid_yaml.write_text('invalid: yaml: content: [')
 
-        with pytest.raises(Exception):  # Should raise YAML parsing error
+        with pytest.raises(  # noqa: B017
+            Exception  # noqa: PT011
+        ):  # Should raise YAML parsing error
             load_config(invalid_yaml)

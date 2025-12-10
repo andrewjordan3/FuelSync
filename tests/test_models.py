@@ -59,12 +59,12 @@ class TestGetMCTransExtLocV2Request:
     def test_missing_beg_date_raises_error(self) -> None:
         """Test that missing beg_date raises ValidationError."""
         with pytest.raises(ValidationError):
-            GetMCTransExtLocV2Request(end_date=datetime(2024, 11, 14, tzinfo=UTC))  # type: ignore
+            GetMCTransExtLocV2Request(end_date=datetime(2024, 11, 14, tzinfo=UTC)) # pyright: ignore[reportCallIssue]
 
     def test_missing_end_date_raises_error(self) -> None:
         """Test that missing end_date raises ValidationError."""
         with pytest.raises(ValidationError):
-            GetMCTransExtLocV2Request(beg_date=datetime(2024, 11, 1, tzinfo=UTC))  # type: ignore
+            GetMCTransExtLocV2Request(beg_date=datetime(2024, 11, 1, tzinfo=UTC)) # pyright: ignore[reportCallIssue]
 
     def test_to_soap_format_returns_dict(self) -> None:
         """Test that to_soap_format returns a dictionary."""
@@ -72,7 +72,7 @@ class TestGetMCTransExtLocV2Request:
         end_date = datetime(2024, 11, 14, 15, 30, 45, 456000, tzinfo=UTC)
 
         request = GetMCTransExtLocV2Request(beg_date=beg_date, end_date=end_date)
-        soap_format = request.to_soap_format()
+        soap_format: dict[str, str | None] = request.to_soap_format()
 
         assert isinstance(soap_format, dict)
         assert 'begDate' in soap_format
@@ -84,19 +84,19 @@ class TestGetMCTransExtLocV2Request:
         end_date = datetime(2024, 11, 14, 15, 30, 45, 456000, tzinfo=UTC)
 
         request = GetMCTransExtLocV2Request(beg_date=beg_date, end_date=end_date)
-        soap_format = request.to_soap_format()
+        soap_format: dict[str, str | None] = request.to_soap_format()
 
         assert soap_format['begDate'] == '2024-11-01T12:30:45.123+00:00'
         assert soap_format['endDate'] == '2024-11-14T15:30:45.456+00:00'
 
     def test_naive_datetime_converted_to_utc(self) -> None:
         """Test that naive datetime is converted to UTC in SOAP format."""
-        beg_date = datetime(2024, 11, 1, 12, 30, 45)
-        end_date = datetime(2024, 11, 14, 15, 30, 45)
+        beg_date = datetime(2024, 11, 1, 12, 30, 45)  # noqa: DTZ001
+        end_date = datetime(2024, 11, 14, 15, 30, 45)  # noqa: DTZ001
 
         request = GetMCTransExtLocV2Request(beg_date=beg_date, end_date=end_date)
-        soap_format = request.to_soap_format()
+        soap_format: dict[str, str | None] = request.to_soap_format()
 
         # Should have +00:00 timezone
-        assert '+00:00' in soap_format['begDate']
-        assert '+00:00' in soap_format['endDate']
+        assert '+00:00' in soap_format['begDate'] # pyright: ignore[reportOperatorIssue]
+        assert '+00:00' in soap_format['endDate'] # pyright: ignore[reportOperatorIssue]

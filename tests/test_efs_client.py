@@ -2,10 +2,10 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
-from jinja2 import Template
+from requests import Response
 
 from fuelsync.efs_client import EfsClient
 from fuelsync.models import GetMCTransExtLocV2Request
@@ -81,7 +81,7 @@ class TestEfsClientBuildHeaders:
         mock_login.return_value = 'test-token'
         client = EfsClient(config=sample_config)
 
-        headers = client._build_headers('testOperation')
+        headers: dict[str, str] = client._build_headers('testOperation')  # pyright: ignore[reportPrivateUsage]
 
         assert headers['SOAPAction'] == 'testOperation'
         assert headers['Content-Type'] == 'text/xml; charset=utf-8'
@@ -103,7 +103,7 @@ class TestEfsClientRenderTemplate:
         end_date = datetime(2024, 11, 14, tzinfo=UTC)
         request = GetMCTransExtLocV2Request(beg_date=beg_date, end_date=end_date)
 
-        rendered = client._render_template('getMCTransExtLocV2.xml', request)
+        rendered: str = client._render_template('getMCTransExtLocV2.xml', request)  # pyright: ignore[reportPrivateUsage]
 
         assert isinstance(rendered, str)
         # Check that session token is in the rendered template
@@ -132,9 +132,9 @@ class TestEfsClientExecuteOperation:
         end_date = datetime(2024, 11, 14, tzinfo=UTC)
         request = GetMCTransExtLocV2Request(beg_date=beg_date, end_date=end_date)
 
-        response = client.execute_operation(request)
+        response: Response = client.execute_operation(request)
 
-        assert response.status_code == 200
+        assert response.status_code == 200  # noqa: PLR2004
         mock_post.assert_called_once()
 
 
@@ -209,9 +209,11 @@ class TestEfsClientContextManager:
         mock_login.return_value = 'test-token'
         mock_post.return_value = Mock()
 
-        with pytest.raises(ValueError, match='Test error'):
-            with EfsClient(config=sample_config):
-                raise ValueError('Test error')
+        with (
+            pytest.raises(ValueError, match='Test error'),
+            EfsClient(config=sample_config),
+        ):
+            raise ValueError('Test error')
 
         # Logout should still have been called
         assert mock_post.call_count >= 1
@@ -228,7 +230,7 @@ class TestEfsClientRepr:
         mock_login.return_value = 'test-token'
         client = EfsClient(config=sample_config)
 
-        repr_str = repr(client)
+        repr_str: str = repr(client)
 
         assert 'EfsClient' in repr_str
         assert str(sample_config.efs.endpoint_url) in repr_str

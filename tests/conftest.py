@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
+import yaml
 from requests import Response
 
 from fuelsync.utils import FuelSyncConfig
@@ -112,32 +113,16 @@ def mock_requests_response() -> Mock:
 @pytest.fixture
 def temp_config_file(tmp_path: Path, sample_config: FuelSyncConfig) -> Path:
     """Create a temporary config file for testing."""
-    config_path = tmp_path / 'config.yaml'
-    config_content = f"""efs:
-  endpoint_url: "{sample_config.efs.endpoint_url}"
-  username: "{sample_config.efs.username}"
-  password: "{sample_config.efs.password}"
+    config_path: Path = tmp_path / 'config.yaml'
 
-client:
-  request_timeout: {sample_config.client.request_timeout}
-  verify_ssl: {str(sample_config.client.verify_ssl).lower()}
-  max_retries: {sample_config.client.max_retries}
-  retry_backoff_factor: {sample_config.client.retry_backoff_factor}
+    # Dump the config using pydantic + yaml so types are preserved
+    config_dict: dict[str, Any] = sample_config.model_dump(mode='json')
 
-pipeline:
-  default_start_date: "{sample_config.pipeline.default_start_date}"
-  batch_size_days: {sample_config.pipeline.batch_size_days}
-  lookback_days: {sample_config.pipeline.lookback_days}
-  request_delay_seconds: {sample_config.pipeline.request_delay_seconds}
+    config_path.write_text(
+        yaml.safe_dump(
+            config_dict,
+            sort_keys=False,  # Keep a nice human order
+        )
+    )
 
-storage:
-  parquet_file: "{sample_config.storage.parquet_file}"
-  compression: "{sample_config.storage.compression}"
-
-logging:
-  console_level: "{sample_config.logging.console_level}"
-  file_level: "{sample_config.logging.file_level}"
-  file_path: "{sample_config.logging.file_path}"
-"""
-    config_path.write_text(config_content)
     return config_path
