@@ -290,10 +290,10 @@ FuelSync/
 │       │   └── config.yaml                    # Configuration file
 │       ├── response_models/                   # Response Pydantic models
 │       │   ├── __init__.py
-│       │   ├── TransExtLocV2_response.py      # Detailed transaction response
-│       │   ├── transSummary_response.py       # Summary response
-│       │   ├── getTranRejects_response.py     # Rejected transactions
-│       │   └── card_summary_response.py       # Card summary response
+│       │   ├── card_summary_response.py       # Card summary response
+│       │   ├── trans_ext_loc_response.py      # Detailed transaction response
+│       │   ├── trans_rejects_response.py      # Rejected transactions
+│       │   └── trans_summary_response.py      # Summary response
 │       ├── templates/                         # Jinja2 SOAP templates
 │       │   ├── getMCTransExtLocV2.xml
 │       │   ├── transSummaryRequest.xml
@@ -304,6 +304,7 @@ FuelSync/
 │       │   ├── __init__.py
 │       │   ├── config_loader.py               # YAML config loading & validation
 │       │   ├── datetime_utils.py              # Date/time formatting for SOAP
+│       │   ├── file_io.py                     # File I/O operations
 │       │   ├── logger.py                      # Centralized logging setup
 │       │   ├── login.py                       # EFS authentication
 │       │   ├── model_tools.py                 # XML parsing helpers
@@ -312,6 +313,14 @@ FuelSync/
 │       ├── efs_client.py                      # Main SOAP API client
 │       ├── models.py                          # Request Pydantic models
 │       └── pipeline.py                        # Incremental data sync pipeline
+├── tests/                                     # Test suite
+│   ├── __init__.py
+│   ├── conftest.py                            # Pytest fixtures and configuration
+│   ├── test_config_loader.py                 # Tests for configuration loading
+│   ├── test_datetime_utils.py                # Tests for datetime utilities
+│   ├── test_efs_client.py                    # Tests for EFS client
+│   ├── test_models.py                        # Tests for request models
+│   └── test_xml_parser.py                    # Tests for XML parsing
 ├── pyproject.toml                             # Project metadata & dependencies
 ├── README.md                                  # This file
 └── LICENSE                                    # MIT License
@@ -407,7 +416,28 @@ mypy src/fuelsync
 
 ### Testing
 
-Tests are currently in development. Contributions welcome!
+The project includes a comprehensive test suite using pytest. Tests cover:
+- Datetime utilities
+- XML parsing
+- Request models validation
+- EFS client functionality
+- Configuration loading
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage report
+pytest --cov=fuelsync --cov-report=html
+
+# Run specific test file
+pytest tests/test_datetime_utils.py
+
+# Run with verbose output
+pytest -v
+```
+
+Test files are located in the `tests/` directory and follow the naming convention `test_*.py`.
 
 ## Architecture
 
