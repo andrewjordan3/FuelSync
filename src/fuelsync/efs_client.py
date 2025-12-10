@@ -14,8 +14,8 @@ from types import TracebackType
 import requests
 from jinja2 import Environment, FileSystemLoader, Template
 
-from .models import EfsOperationRequest
-from .utils import FuelSyncConfig, load_config, login_to_efs
+from fuelsync.models import EfsOperationRequest
+from fuelsync.utils import FuelSyncConfig, load_config, login_to_efs
 
 # Set up module-level logger
 logger: logging.Logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ class EfsClient:
             self.config: FuelSyncConfig = config
             logger.debug('Initializing EfsClient with injected configuration')
         elif config_path is not None:
-            logger.info(f'Loading EFS configuration from: {config_path}')
+            logger.info('Loading EFS configuration from: %r', config_path)
             self.config = load_config(config_path)
         else:
             logger.info('Loading EFS configuration from default location')
@@ -114,13 +114,13 @@ class EfsClient:
         # Immediately authenticate with the EFS API to obtain a session token.
         # This token will be included in all subsequent operation requests.
         # If authentication fails, the exception will propagate to the caller.
-        logger.info(f'Authenticating with EFS API at {self.config.efs.endpoint_url}')
+        logger.info('Authenticating with EFS API at %r', self.config.efs.endpoint_url)
 
         try:
             self.session_token: str = login_to_efs(self.config)
             logger.info('EFS client initialized successfully with active session')
         except Exception as auth_error:
-            logger.error(f'Failed to authenticate with EFS API: {auth_error}')
+            logger.error('Failed to authenticate with EFS API: %r', auth_error)
             raise
 
         # ====================================================================
@@ -153,7 +153,7 @@ class EfsClient:
             lstrip_blocks=True,
         )
         logger.debug(
-            f'Jinja2 environment initialized with templates from: {templates_dir}'
+            'Jinja2 environment initialized with templates from: %r', templates_dir
         )
 
     def _build_headers(self, operation_name: str) -> dict[str, str]:
@@ -175,7 +175,7 @@ class EfsClient:
             **self.base_soap_headers,
             'SOAPAction': operation_name,
         }
-        logger.debug(f'Built headers for operation: {operation_name}')
+        logger.debug('Built headers for operation: %r', operation_name)
         return operation_headers
 
     def _render_template(
@@ -196,7 +196,7 @@ class EfsClient:
         Raises:
             jinja2.TemplateNotFound: If the template file doesn't exist.
         """
-        logger.debug(f'Loading template: {template_name}')
+        logger.debug('Loading template: %r', template_name)
 
         template: Template = self.jinja_env.get_template(template_name)
 
@@ -211,7 +211,7 @@ class EfsClient:
             **soap_data,
         }
 
-        logger.debug(f'Rendering template with {len(template_context)} parameters')
+        logger.debug('Rendering template with %d parameters', len(template_context))
         rendered_xml: str = template.render(template_context)
 
         return rendered_xml
@@ -243,8 +243,9 @@ class EfsClient:
         """
         try:
             logger.debug(
-                f'Sending SOAP request to {self.config.efs.endpoint_url} '
-                f'(timeout={self.config.client.request_timeout}s)'
+                'Sending SOAP request to %r (timeout=%ds)',
+                self.config.efs.endpoint_url,
+                self.config.client.request_timeout,
             )
 
             # Send the POST request with the SOAP envelope encoded as UTF-8 bytes
@@ -258,8 +259,9 @@ class EfsClient:
 
             # Log the response status for debugging/monitoring
             logger.debug(
-                f'Received response for operation {operation_name}: '
-                f'HTTP {response.status_code}'
+                'Received response for operation %r: HTTP %r',
+                operation_name,
+                response.status_code,
             )
 
             # Check for HTTP-level errors (4xx, 5xx status codes).
@@ -268,21 +270,24 @@ class EfsClient:
             response.raise_for_status()
 
             logger.info(
-                f'Operation {operation_name} completed successfully '
-                f'(HTTP {response.status_code})'
+                'Operation %r completed successfully (HTTP %r)',
+                operation_name,
+                response.status_code,
             )
 
             return response
 
         except requests.exceptions.Timeout as timeout_error:
             logger.error(
-                f'Request timeout for operation {operation_name} '
-                f'after {self.config.client.request_timeout}s: {timeout_error}'
+                'Request timeout for operation %r after %ds: %r',
+                operation_name,
+                self.config.client.request_timeout,
+                timeout_error,
             )
             raise
 
         except requests.exceptions.HTTPError as http_error:
-            logger.error(f'HTTP error for operation {operation_name}: {http_error}')
+            logger.error('HTTP error for operation %r: %r', operation_name, http_error)
 
             # Log request details
             logger.debug('***REQUEST HEADERS***')
@@ -307,7 +312,7 @@ class EfsClient:
 
         except requests.exceptions.RequestException as request_error:
             logger.error(
-                f'Network error for operation {operation_name}: {request_error}'
+                'Network error for operation %r: %r', operation_name, request_error
             )
             raise
 
@@ -364,7 +369,7 @@ class EfsClient:
         # Extract operation name and template name from the model
         operation_name: str = request_model.operation_name
         template_name: str = request_model.template_name
-        logger.info(f'Executing EFS operation: {operation_name}')
+        logger.info('Executing EFS operation: %r', operation_name)
 
         # Build the request components using our focused private methods
         headers: dict[str, str] = self._build_headers(operation_name)
@@ -414,12 +419,15 @@ class EfsClient:
             # Clear the session token to prevent reuse
             self.session_token = ''
 
-            logger.info(f'Successfully logged out of EFS (HTTP {response.status_code})')
+            logger.info(
+                'Successfully logged out of EFS (HTTP %r)', response.status_code
+            )
 
         except Exception as logout_error:
             logger.warning(
-                f'Logout request encountered an error: {logout_error}. '
-                f'Session token cleared locally regardless.'
+                'Logout request encountered an error: %r. '
+                'Session token cleared locally regardless.',
+                logout_error,
             )
             # Clear the token even if logout failed, to prevent reuse
             self.session_token = ''
@@ -466,9 +474,10 @@ class EfsClient:
             This method does not suppress exceptions. If an exception
             occurred in the with block, it will be re-raised after logout.
         """
+        exception_present: bool = exc_type is not None
         logger.debug(
-            f'Exiting EfsClient context manager '
-            f'(exception occurred: {exc_type is not None})'
+            'Exiting EfsClient context manager (exception occurred: %s)',
+            exception_present,
         )
 
         try:
@@ -478,15 +487,16 @@ class EfsClient:
         except Exception as logout_error:
             # If logout fails, log the error but don't suppress the
             # original exception from the with block
-            if exc_type is not None:
+            if exception_present:
                 # There was already an exception, log logout failure as warning
                 logger.warning(
-                    f'Logout failed during exception handling: {logout_error}. '
-                    f'Original exception will be raised.'
+                    'Logout failed during exception handling: %r. '
+                    'Original exception will be raised.',
+                    logout_error,
                 )
             else:
                 # No original exception, so the logout error is the main issue
-                logger.error(f'Logout failed: {logout_error}')
+                logger.error('Logout failed: %r', logout_error)
                 raise
 
         # Return None (or False) to allow exceptions to propagate

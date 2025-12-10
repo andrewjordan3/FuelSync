@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
-from .utils import format_for_soap
+from fuelsync.utils import format_for_soap
 
 
 class EfsOperationRequest(BaseModel, ABC):

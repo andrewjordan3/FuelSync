@@ -8,13 +8,13 @@ fleet card with its associated metadata (unit, driver, policy, status, etc.).
 """
 
 import logging
-from typing import Any
+from typing import Any, Self
 
 import pandas as pd
 from lxml import etree  # pyright: ignore[reportAttributeAccessIssue]
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..utils import (
+from fuelsync.utils import (
     check_for_soap_fault,
     extract_soap_body,
     parse_soap_response,
@@ -228,8 +228,9 @@ class WSCardSummary(BaseModel):
         """
         if value.upper() not in VALID_CARD_STATUSES:
             logger.warning(
-                f"Unexpected card status '{value}'. "
-                f'Expected one of {VALID_CARD_STATUSES}'
+                'Unexpected card status %r. Expected one of %r',
+                value,
+                VALID_CARD_STATUSES,
             )
         return value
 
@@ -250,13 +251,14 @@ class WSCardSummary(BaseModel):
         """
         if value.upper() not in VALID_PAYROLL_STATUSES:
             logger.warning(
-                f"Unexpected payroll status '{value}'. "
-                f'Expected one of {VALID_PAYROLL_STATUSES}'
+                'Unexpected payroll status %r. Expected one of %r',
+                value,
+                VALID_PAYROLL_STATUSES,
             )
         return value
 
     @classmethod
-    def from_xml_element(cls, element: etree.Element) -> 'WSCardSummary':
+    def from_xml_element(cls, element: etree.Element) -> Self:
         """
         Parse a <value> XML element into a WSCardSummary instance.
 
@@ -302,7 +304,7 @@ class GetCardSummariesResponse(BaseModel):
     )
 
     @classmethod
-    def from_soap_response(cls, xml_string: str) -> 'GetCardSummariesResponse':
+    def from_soap_response(cls, xml_string: str) -> Self:
         """
         Parse a SOAP XML response into a GetCardSummariesResponse instance.
 
@@ -342,7 +344,7 @@ class GetCardSummariesResponse(BaseModel):
             logger.warning('No <value> elements found in response body.')
             return cls(cards=[])
 
-        logger.info(f'Found {len(card_elements)} card summary elements to parse.')
+        logger.info('Found %d card summary elements to parse.', len(card_elements))
 
         # Parse each card element, continuing on individual failures
         for card_elem in card_elements:
@@ -354,13 +356,15 @@ class GetCardSummariesResponse(BaseModel):
                     card_elem, pretty_print=True, encoding='unicode'
                 )
                 logger.error(
-                    f'Failed to parse card summary <value> element: {e}\n'
-                    f'--- Failing XML Snippet ---\n{failed_xml}\n'
-                    f'--- End Snippet ---'
+                    'Failed to parse card summary <value> element: %r\n'
+                    '--- Failing XML Snippet ---\n%s\n'
+                    '--- End Snippet ---',
+                    e,
+                    failed_xml,
                 )
                 # Continue parsing other cards rather than failing entirely
 
-        logger.info(f'Successfully parsed {len(cards)} card summaries.')
+        logger.info('Successfully parsed %d card summaries.', len(cards))
         return cls(cards=cards)
 
     def to_dataframe(self) -> pd.DataFrame:

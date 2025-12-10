@@ -1,4 +1,4 @@
-# fuelsync/response_models/transSummary_response.py
+# fuelsync/response_models/trans_summary_response.py
 """
 Pydantic models for parsing transSummary SOAP API response.
 
@@ -12,7 +12,7 @@ from typing import Any
 from lxml import etree
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ..utils import (
+from fuelsync.utils import (
     check_for_soap_fault,
     extract_soap_body,
     parse_soap_response,
@@ -56,7 +56,7 @@ class WSTransSummary(BaseModel):
             # Validate and convert types using Pydantic
             return cls.model_validate(data)
         except ValidationError as e:
-            logger.error(f'Failed to validate parsed XML data: {e}\nData: {data}')
+            logger.error('Failed to validate parsed XML data: %r\nData: %r', e, data)
             raise ValueError(f'Pydantic validation failed for transaction: {e}') from e
 
     def __repr__(self) -> str:
@@ -126,9 +126,9 @@ class TransSummaryResponse(BaseModel):
         try:
             summary: WSTransSummary = WSTransSummary.from_xml_element(result_element)
             logger.info(
-                f'Successfully parsed summary: '
-                f'{summary.tran_count} transactions, '
-                f'${summary.tran_total:.2f} total'
+                'Successfully parsed summary: %d transactions, $%.2f total',
+                summary.tran_count,
+                summary.tran_total,
             )
             return cls(summary=summary)
         except Exception as e:
@@ -136,9 +136,11 @@ class TransSummaryResponse(BaseModel):
                 result_element, pretty_print=True, encoding='unicode'
             )
             logger.error(
-                f'Failed to parse summary element: {e}\n'
-                f'--- Failing XML Snippet ---\n{failed_xml}\n'
-                f'--- End Snippet ---'
+                'Failed to parse summary element: %r\n'
+                '--- Failing XML Snippet ---\n%s\n'
+                '--- End Snippet ---',
+                e,
+                failed_xml,
             )
             raise ValueError(f'Failed to parse transaction summary: {e}') from e
 

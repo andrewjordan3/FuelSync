@@ -219,7 +219,7 @@ def _parse_model_list(
         return []
 
     logger.debug(
-        f"Parsing list field (tag '{xml_tag}'): found {len(nested_elements)} items"
+        'Parsing list field (tag %r): found %d items', xml_tag, len(nested_elements)
     )
 
     # Recursively parse each nested element

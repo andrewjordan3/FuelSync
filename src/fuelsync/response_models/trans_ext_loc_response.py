@@ -1,4 +1,4 @@
-# fuelsync/response_models/TransExtLocV2_response.py
+# fuelsync/response_models/trans_ext_loc_response.py
 """
 Pydantic models for parsing EFS SOAP API *responses*.
 
@@ -405,7 +405,7 @@ class WSMCTransExtLocV2(BaseModel):
             # Validate and convert types using Pydantic
             return cls.model_validate(data)
         except ValidationError as e:
-            logger.error(f'Failed to validate parsed XML data: {e}\nData: {data}')
+            logger.error('Failed to validate parsed XML data: %r\nData: %r', e, data)
             raise ValueError(f'Pydantic validation failed for transaction: {e}') from e
 
     def __repr__(self) -> str:
@@ -475,7 +475,7 @@ class GetMCTransExtLocV2Response(BaseModel):
             # This isn't an error, just an empty list
             return cls(transactions=[])
 
-        logger.info(f'Found {len(result_elements)} <value> elements to parse.')
+        logger.info('Found %d <value> elements to parse.', len(result_elements))
 
         for trans_elem in result_elements:
             try:
@@ -486,13 +486,15 @@ class GetMCTransExtLocV2Response(BaseModel):
                     trans_elem, pretty_print=True, encoding='unicode'
                 )
                 logger.error(
-                    f'Failed to parse one transaction <value> element: {e}\n'
-                    f'--- Failing XML Snippet ---\n{failed_xml}\n'
-                    f'--- End Snippet ---'
+                    'Failed to parse one transaction <value> element: %r\n'
+                    '--- Failing XML Snippet ---\n%s\n'
+                    '--- End Snippet ---',
+                    e,
+                    failed_xml,
                 )
                 # Continue parsing other transactions
 
-        logger.info(f'Successfully parsed {len(transactions)} transactions.')
+        logger.info('Successfully parsed %d transactions.', len(transactions))
         return cls(transactions=transactions)
 
     def to_dataframe(self) -> pd.DataFrame:

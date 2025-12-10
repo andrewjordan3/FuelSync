@@ -55,8 +55,9 @@ class ParquetFileHandler:
         self.storage_config.parquet_file.parent.mkdir(parents=True, exist_ok=True)
 
         logger.info(
-            f'Initialized ParquetFileHandler for {self.storage_config.parquet_file} '
-            f'(compression={self.storage_config.compression})'
+            'Initialized ParquetFileHandler for %r (compression=%s)',
+            self.storage_config.parquet_file,
+            self.storage_config.compression,
         )
 
     def load(self) -> pd.DataFrame | None:
@@ -85,15 +86,16 @@ class ParquetFileHandler:
             return None
 
         try:
-            logger.debug(f'Loading cached data from {file_path}')
+            logger.debug('Loading cached data from %r', file_path)
             dataframe: pd.DataFrame = pd.read_parquet(file_path)
             record_count: int = len(dataframe)
-            logger.debug(f'Loaded {record_count} records from {file_path}')
+            logger.debug('Loaded %d records from %r', record_count, file_path)
             return dataframe
-        except (OSError, ArrowInvalid, ArrowIOError) as exception: # pyright: ignore[reportUnknownVariableType]
-            logger.error(
-                f'Failed to read Parquet file at {file_path}: {exception}',
-                exc_info=True,
+        except (OSError, ArrowInvalid, ArrowIOError) as exception:  # pyright: ignore[reportUnknownVariableType]
+            logger.exception(
+                'Failed to read Parquet file at %r: %r',
+                file_path,
+                exception,
             )
             return None
 
@@ -119,7 +121,7 @@ class ParquetFileHandler:
         """
         if dataframe.empty:
             logger.warning(
-                f'Saving empty DataFrame to {self.storage_config.parquet_file}'
+                'Saving empty DataFrame to %r', self.storage_config.parquet_file
             )
 
         file_path: Path = self.storage_config.parquet_file
@@ -128,8 +130,10 @@ class ParquetFileHandler:
         try:
             record_count: int = len(dataframe)
             logger.info(
-                f'Saving {record_count} records to {file_path} '
-                f'(compression={compression})'
+                'Saving %d records to %r (compression=%s)',
+                record_count,
+                file_path,
+                compression,
             )
 
             dataframe.to_parquet(
@@ -138,8 +142,5 @@ class ParquetFileHandler:
                 compression=compression,
             )
         except Exception as exception:
-            logger.error(
-                f'Failed to save data to {file_path}: {exception}',
-                exc_info=True,
-            )
+            logger.exception('Failed to save data to %r: %r', file_path, exception)
             raise

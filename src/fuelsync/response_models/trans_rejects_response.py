@@ -8,12 +8,13 @@ with details about why each transaction was rejected.
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Self
 
 import pandas as pd
 from lxml import (
-    etree,  # pyright: ignore[reportUnknownVariableType, reportAttributeAccessIssue]
+    etree,
 )
+from lxml.etree import Element
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..utils import (
@@ -60,7 +61,7 @@ class WSTranReject(BaseModel):
     unit: str | None = Field(None, alias='unit')
 
     @classmethod
-    def from_xml_element(cls, element: etree._Element) -> 'WSTranReject':
+    def from_xml_element(cls, element: Element) -> Self:
         """
         Parse a <value> XML element into a WSTranReject instance.
 
@@ -76,7 +77,7 @@ class WSTranReject(BaseModel):
             # Validate and convert types using Pydantic
             return cls.model_validate(data)
         except ValidationError as e:
-            logger.error(f'Failed to validate parsed XML data: {e}\nData: {data}')
+            logger.error('Failed to validate parsed XML data: %r\nData: %r', e, data)
             raise ValueError(f'Pydantic validation failed for transaction: {e}') from e
 
     def __repr__(self) -> str:
@@ -95,10 +96,10 @@ class GetTranRejectsResponse(BaseModel):
     Contains an array of rejected transactions for the specified search criteria.
     """
 
-    rejects: list[WSTranReject] = Field(default_factory=list)
+    rejects: list[WSTranReject] = Field(default_factory=list)  # pyright: ignore[reportUnknownVariableType]
 
     @classmethod
-    def from_soap_response(cls, xml_string: str) -> 'GetTranRejectsResponse':
+    def from_soap_response(cls, xml_string: str) -> Self:
         """
         Parse a SOAP XML response into a GetTranRejectsResponse instance.
 
@@ -135,26 +136,26 @@ class GetTranRejectsResponse(BaseModel):
         logger.debug('Parsing SOAP response for GetTranRejectsResponse')
 
         # 1. Parse string to XML
-        root: etree._Element = parse_soap_response(xml_string)
+        root: Element = parse_soap_response(xml_string)
 
         # 2. Check for SOAP:Fault
         check_for_soap_fault(root)
 
         # 3. Get the <soap:Body>
-        body: etree._Element = extract_soap_body(root)
+        body: Element = extract_soap_body(root)
 
         # 4. Find all rejected transaction elements
         rejects: list[WSTranReject] = []
 
         # Based on the schema, the repeating element is <value>
-        result_elements = body.findall('.//value')
+        result_elements: list[Element] = body.findall('.//value')
 
         if not result_elements:
             logger.warning('No <value> elements found in the response body.')
             # This isn't an error, just an empty list
             return cls(rejects=[])
 
-        logger.info(f'Found {len(result_elements)} <value> elements to parse.')
+        logger.info('Found %d <value> elements to parse.', len(result_elements))
 
         for reject_elem in result_elements:
             try:
@@ -165,13 +166,15 @@ class GetTranRejectsResponse(BaseModel):
                     reject_elem, pretty_print=True, encoding='unicode'
                 )
                 logger.error(
-                    f'Failed to parse one reject <value> element: {e}\n'
-                    f'--- Failing XML Snippet ---\n{failed_xml}\n'
-                    f'--- End Snippet ---'
+                    'Failed to parse one reject <value> element: %r\n'
+                    '--- Failing XML Snippet ---\n%r\n'
+                    '--- End Snippet ---',
+                    e,
+                    failed_xml,
                 )
                 # Continue parsing other rejects
 
-        logger.info(f'Successfully parsed {len(rejects)} rejected transactions.')
+        logger.info('Successfully parsed %d rejected transactions.', len(rejects))
         return cls(rejects=rejects)
 
     def to_dataframe(self) -> pd.DataFrame:

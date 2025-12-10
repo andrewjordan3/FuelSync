@@ -15,7 +15,7 @@ description = "A robust, type-safe Python client for the WEX EFS SOAP API"
 readme = "README.md"
 license = "MIT" # SPDX identifier (PEP 639)
 license-files = ["LICENSE"] # Point to the actual license file
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 keywords = [
     "wex",
     "efs",
@@ -30,8 +30,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -61,11 +59,19 @@ dev = [
     "pytest-cov>=4.1.0",
     "types-pyyaml>=6.0.0",
     "types-requests>=2.31.0",
-    "types-lxml>=2025.8.25"
+    "types-lxml>=2025.8.25",
 ]
 
 # All optional dependencies
-all = ["fuelsync[dev]"]
+all = [
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "types-pyyaml>=6.0.0",
+    "types-requests>=2.31.0",
+    "types-lxml>=2025.8.25",
+]
 
 [project.urls]
 Homepage = "https://github.com/andrewjordan3/FuelSync"
@@ -95,7 +101,7 @@ exclude = ["tests*", "docs*"]
 ###############################################################################
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py312"
 
 exclude = [
     ".git",
@@ -118,13 +124,19 @@ select = [
     "C4",  # flake8-comprehensions
     "DTZ", # flake8-datetimez
     "T10", # flake8-debugger
+    "SIM", # flake8-simplify
+    "PTH", # flake8-use-pathlib
     "PL",  # pylint
     "RUF", # ruff-specific rules
+    "PGH", # pygrep-hooks (requires error code for type ignores)
+    "G",   # flake8-logging-format (Enforces lazy logging %s over f-strings)
+    "N",   # pep8-naming
+    "PT",  # flake8-pytest-style (Test suite consistency)
 ]
 
 ignore = [
-    "E501",    # Line too long (handled by ruff format)
-    "E203",    # Whitespace before ':' (conflicts with formatter)
+    "E501", # Line too long (handled by ruff format)
+    "E203", # Whitespace before ':' (conflicts with formatter)
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -144,7 +156,7 @@ combine-as-imports = true
 # MYPY - TYPE CHECKING
 ###############################################################################
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -170,7 +182,7 @@ include = ["src"]
 exclude = ["**/node_modules", "**/__pycache__", "**/.*"]
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false
-reportUnknownMemberType = false # Often needed for libraries like lxml/pandas
+reportUnknownMemberType = false                          # Often needed for libraries like lxml/pandas
 reportUnknownArgumentType = false
 
 ###############################################################################
@@ -192,7 +204,7 @@ addopts = [
 # COVERAGE
 ###############################################################################
 [tool.coverage.run]
-source = ["src"]
+source = ["fuelsync"]
 omit = ["*/tests/*", "*/__pycache__/*", "*/site-packages/*"]
 
 [tool.coverage.report]

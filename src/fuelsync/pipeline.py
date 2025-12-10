@@ -14,10 +14,10 @@ from pathlib import Path
 import pandas as pd
 from requests import Response
 
-from .efs_client import EfsClient
-from .models import GetMCTransExtLocV2Request
-from .response_models import GetMCTransExtLocV2Response
-from .utils import FuelSyncConfig, ParquetFileHandler, load_config, setup_logger
+from fuelsync.efs_client import EfsClient
+from fuelsync.models import GetMCTransExtLocV2Request
+from fuelsync.response_models import GetMCTransExtLocV2Response
+from fuelsync.utils import FuelSyncConfig, ParquetFileHandler, load_config, setup_logger
 
 # Set up module-level logger
 logger: logging.Logger = logging.getLogger(__name__)
@@ -146,13 +146,14 @@ class FuelPipeline:
             if latest_datetime.tzinfo is None:
                 latest_datetime = latest_datetime.replace(tzinfo=UTC)
 
-            logger.debug(f'Latest transaction timestamp found: {latest_datetime}')
+            logger.debug('Latest transaction timestamp found: %s', latest_datetime)
             return latest_datetime
 
         except Exception as e:
             logger.warning(
-                f'Failed to read watermark from historical data: {e}. '
-                f'Pipeline will default to initial start date.'
+                'Failed to read watermark from historical data: %r. Pipeline '
+                'will default to initial start date.',
+                e,
             )
             return None
 
@@ -185,10 +186,13 @@ class FuelPipeline:
                     days=self.config.pipeline.lookback_days
                 )
                 logger.info(
-                    f'Resuming incremental sync. '
-                    f'Last known data: {last_known_timestamp.date()}. '
-                    f'Lookback buffer: {self.config.pipeline.lookback_days} days. '
-                    f'Effective Start: {start_date.date()}'
+                    'Resuming incremental sync. '
+                    'Last known data: %s. '
+                    'Lookback buffer: %d days. '
+                    'Effective Start: %s',
+                    last_known_timestamp.date(),
+                    self.config.pipeline.lookback_days,
+                    start_date.date(),
                 )
             else:
                 # Use config for the inception date
@@ -206,7 +210,8 @@ class FuelPipeline:
                 )
 
                 logger.info(
-                    f'No existing history found. Performing initial load from {start_date.date()}'
+                    'No existing history found. Performing initial load from %s',
+                    start_date.date(),
                 )
 
         # Ensure UTC hygiene
@@ -254,7 +259,7 @@ class FuelPipeline:
 
         if parsed_response.transaction_count > 0:
             batch_df: pd.DataFrame = parsed_response.to_dataframe()
-            logger.debug(f'  Batch retrieved {len(batch_df)} records.')
+            logger.debug('  Batch retrieved %d records.', len(batch_df))
             return batch_df
         else:
             logger.debug('  Batch returned no records.')
@@ -290,7 +295,7 @@ class FuelPipeline:
             Exception: Re-raises the last exception encountered if all retry attempts
                       are exhausted, which signals the pipeline to abort.
         """
-        logger.debug(f'Processing batch: {batch_start} -> {batch_end}')
+        logger.debug('Processing batch: %s -> %s', batch_start, batch_end)
 
         max_retries: int = self.config.client.max_retries
         backoff_factor: float = self.config.client.retry_backoff_factor
@@ -301,15 +306,19 @@ class FuelPipeline:
 
             except Exception as e:
                 logger.warning(
-                    f'Error fetching batch {batch_start} '
-                    f'(Attempt {attempt + 1}/{max_retries}): {e}'
+                    'Error fetching batch %s (Attempt %d/%d): %r',
+                    batch_start,
+                    attempt + 1,
+                    max_retries,
+                    e,
                 )
 
                 # Check if we've exhausted all retry attempts
                 if attempt == max_retries - 1:
                     logger.error(
-                        f'Max retries exceeded for batch starting {batch_start}. '
-                        f'Aborting pipeline.'
+                        'Max retries exceeded for batch starting %s. '
+                        'Aborting pipeline.',
+                        batch_start,
                     )
                     raise
 
@@ -326,16 +335,17 @@ class FuelPipeline:
                     self._recreate_client()
                 except Exception as recreate_error:
                     logger.error(
-                        f'Failed to recreate client: {recreate_error}. '
-                        f'Will retry with existing client after backoff.'
+                        'Failed to recreate client: %r. '
+                        'Will retry with existing client after backoff.',
+                        recreate_error,
                     )
 
                 # Exponential backoff: wait progressively longer between retries
                 # (1s, 2s, 4s for default max_retries=3)
                 sleep_seconds: float = backoff_factor**attempt
                 logger.info(
-                    f'Backing off for {sleep_seconds} seconds before '
-                    f'retrying with fresh session...'
+                    'Backing off for %d seconds before retrying with fresh session...',
+                    sleep_seconds,
                 )
                 time.sleep(sleep_seconds)
 
@@ -456,7 +466,7 @@ class FuelPipeline:
         duplicates_removed: int = row_count_before - row_count_after
 
         logger.debug(
-            f'Deduplication complete. Removed {duplicates_removed} duplicate records.'
+            'Deduplication complete. Removed %d duplicate records.', duplicates_removed
         )
 
         # Update the cache with the final result
@@ -466,8 +476,10 @@ class FuelPipeline:
         # Save to disk (or skip if dry run)
         if dry_run:
             logger.info(
-                f'[DRY RUN] Would have saved {row_count_after} total records '
-                f'to {self.config.storage.parquet_file}. Skipping write operation.'
+                '[DRY RUN] Would have saved %d total records '
+                'to %r. Skipping write operation.',
+                row_count_after,
+                self.config.storage.parquet_file,
             )
         else:
             # Delegate saving to the storage handler
@@ -488,7 +500,8 @@ class FuelPipeline:
             logger.info('EFS client session terminated')
         except Exception as cleanup_error:
             logger.warning(
-                f'Error during cleanup (session may already be invalid): {cleanup_error}'
+                'Error during cleanup (session may already be invalid): %r',
+                cleanup_error,
             )
 
     def run_synchronization(
@@ -511,7 +524,7 @@ class FuelPipeline:
             dry_run: If True, performs all operations EXCEPT saving the Parquet file.
         """
         logger.info(
-            f'Starting EFS transaction synchronization pipeline (Dry Run: {dry_run}).'
+            'Starting EFS transaction synchronization pipeline (Dry Run: %s).', dry_run
         )
 
         try:

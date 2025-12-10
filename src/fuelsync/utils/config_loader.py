@@ -508,7 +508,7 @@ def load_config(config_path: Path | str | None = None) -> FuelSyncConfig:
     else:
         path_obj = _get_default_config_path()
 
-    logger.debug(f'Resolving configuration from: {path_obj}')
+    logger.debug('Resolving configuration from: %r', path_obj)
 
     # 2. Verify File Exists
     # ----------------------
@@ -524,10 +524,10 @@ def load_config(config_path: Path | str | None = None) -> FuelSyncConfig:
     # Read the file and parse it as YAML. At this stage, we have no type safety—
     # just a nested dictionary of raw Python objects (strings, ints, lists, etc.).
     try:
-        with open(path_obj, encoding='utf-8') as f:
+        with Path.open(path_obj, encoding='utf-8') as f:
             raw_config: dict[str, Any] = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        logger.error(f'Failed to parse YAML config file: {e}')
+        logger.error('Failed to parse YAML config file: %r', e)
         raise
 
     # 4. Validate with Pydantic
@@ -546,5 +546,5 @@ def load_config(config_path: Path | str | None = None) -> FuelSyncConfig:
         logger.debug('Configuration validated successfully.')
         return config
     except ValidationError as e:
-        logger.error(f'Configuration validation failed: {e}')
+        logger.error('Configuration validation failed: %r', e)
         raise

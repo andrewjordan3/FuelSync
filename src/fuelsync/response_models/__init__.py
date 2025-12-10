@@ -7,8 +7,7 @@ various EFS API operations. Each operation has its own module with
 dedicated response models.
 """
 
-from .getTranRejects_response import GetTranRejectsResponse, WSTranReject
-from .TransExtLocV2_response import (
+from fuelsync.response_models.trans_ext_loc_response import (
     GetMCTransExtLocV2Response,
     WSFleetMemo,
     WSMCTransExtLocV2,
@@ -18,7 +17,14 @@ from .TransExtLocV2_response import (
     WSTransactionLineItemExt,
     WSTransTaxes,
 )
-from .transSummary_response import TransSummaryResponse, WSTransSummary
+from fuelsync.response_models.trans_rejects_response import (
+    GetTranRejectsResponse,
+    WSTranReject,
+)
+from fuelsync.response_models.trans_summary_response import (
+    TransSummaryResponse,
+    WSTransSummary,
+)
 
 __all__: list[str] = [
     # TransExtLocV2 models
