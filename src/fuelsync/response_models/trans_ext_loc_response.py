@@ -9,30 +9,88 @@ type-safe Python objects.
 # pyright: reportUnknownVariableType=false
 
 import logging
+import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Self
 
 import pandas as pd
 from lxml import etree
 
 # from lxml import ET
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
-from fuelsync.utils.model_tools import parse_xml_to_dict
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 # Import your robust parser utilities
-from ..utils import (
+from fuelsync.utils import (
     check_for_soap_fault,
     extract_soap_body,
     parse_soap_response,
+    parse_xml_to_dict,
 )
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 
 # --- Module-level constants ---
-# Datetime columns for conversion
-datetime_cols: list[str] = ['transaction_date', 'pos_date']
+# Wex sends the string 'null'
+_NULL_TOKEN_PATTERN: re.Pattern[str] = re.compile(r'^\s*(null)?\s*$', re.IGNORECASE)
+
+DATETIME_COLUMNS: list[str] = ['transaction_date', 'pos_date']
+
+FLOAT64_COLUMNS: list[str] = [
+    'location_latitude',
+    'location_longitude',
+    'pref_total',
+    'disc_amount',
+    'carrier_fee',
+    'conversion_rate',
+    'quantity',
+    'ppu',
+    'retail_ppu',
+    'line_amount',
+    'retail_amount',
+    'line_disc_amount',
+    'fed_tax',
+    'state_fuel_tax',
+    'total_line_tax',
+]
+
+INT64_COLUMNS: list[str] = [
+    'transaction_id',
+    'contract_id',
+    'location_country',
+    'disc_type',
+    'line_item_count',
+    'line_number',
+    'fuel_type',
+    'use_type',
+    'odometer',
+    'class_code',
+    'branch_code',
+    'business_id',
+    'driver_id',
+    'region',
+]
+
+STRING_COLUMNS: list[str] = [
+    'card_number',
+    'invoice',
+    'auth_code',
+    'ar_number',
+    'location_name',
+    'location_city',
+    'location_state',
+    'location_zip',
+    'location_address',
+    'billing_currency',
+    'location_currency',
+    'unit',
+    'vehicle_type',
+    'driver_name',
+    'gl_code',
+    'category',
+    'fuel_type_name',
+]
+
 
 # Define fuel type mapping once at the top of the file, after imports
 FUEL_TYPE_MAP: dict[int, str] = {
@@ -125,6 +183,180 @@ LINE_ITEM_FIELD_MAP: dict[str, str] = {
     'disc_amount': 'line_disc_amount',
 }
 
+
+# --- Utility Functions ---
+def _normalize_null_like_value(raw_value: Any) -> Any:
+    """
+    Normalize common null-like API values.
+
+    Treats:
+      - None -> None
+      - '' / whitespace -> None
+      - 'null' (any case, surrounding whitespace) -> None
+
+    Args:
+        raw_value: Incoming raw value from API (often str|None|int|float).
+
+    Returns:
+        None if the value represents missingness; otherwise returns raw_value unchanged.
+    """
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, str) and _NULL_TOKEN_PATTERN.match(raw_value):
+        return None
+    return raw_value
+
+
+def _coerce_optional_int(raw_value: Any) -> int | None:
+    """
+    Coerce an incoming value to an optional int using structural pattern matching.
+
+    Accepts strings like '047078' and returns 47078. Treats null-like tokens as None.
+    Explicitly rejects booleans and non-integer floats to prevent data silent corruption.
+
+    Args:
+        raw_value: The raw data input (typically from an API or CSV).
+
+    Returns:
+        The parsed integer or None if the input is null-like or invalid.
+
+    Side Effects:
+        Emits a logger.warning for inputs that are not null-like but fail coercion.
+    """
+    normalized_value: Any = _normalize_null_like_value(raw_value)
+    result: int | None = None
+
+    match normalized_value:
+        case None:
+            result = None
+
+        case bool():
+            logger.warning(
+                'Expected int but got bool (%r). Returning None', normalized_value
+            )
+            result = None
+
+        case int():
+            result = normalized_value
+
+        case float() if normalized_value.is_integer():
+            result = int(normalized_value)
+
+        case float():
+            logger.warning(
+                'Expected int but got non-integer float (%r). Returning None',
+                normalized_value,
+            )
+            result = None
+
+        case str():
+            stripped_value: str = normalized_value.strip()
+            try:
+                result = int(stripped_value)
+            except ValueError:
+                logger.warning(
+                    'Expected numeric string but got %r. Returning None',
+                    normalized_value,
+                )
+                result = None
+
+        case _:
+            logger.warning(
+                'Unsupported type for int coercion: %s (Value: %r)',
+                type(normalized_value).__name__,
+                normalized_value,
+            )
+            result = None
+
+    return result  # Fallback, should not reach here due to logging above
+
+
+def _coerce_optional_float(raw_value: Any) -> float | None:
+    """
+    Coerce an incoming value to an optional float.
+
+    Treats null-like tokens as None.
+
+    Args:
+        raw_value: Raw value from API.
+
+    Returns:
+        Parsed float, or None.
+
+    Side Effects:
+        Emits logger.warning on invalid, non-missing inputs.
+    """
+    normalized_value: Any = _normalize_null_like_value(raw_value)
+    if normalized_value is None:
+        return None
+
+    if isinstance(normalized_value, bool):
+        logger.warning('Expected float but got bool. Returning None')
+        return None
+
+    if isinstance(normalized_value, (int, float)):
+        return float(normalized_value)
+
+    if isinstance(normalized_value, str):
+        stripped_value: str = normalized_value.strip()
+        try:
+            return float(stripped_value)
+        except ValueError:
+            logger.warning('Expected float but got non-numeric string. Returning None')
+            return None
+
+    logger.warning(
+        'Unsupported type for float coercion: %r', type(normalized_value).__name__
+    )
+    return None  # Fallback, should not reach here due to logging above
+
+
+def _coerce_dataframe_schema(transaction_dataframe: pd.DataFrame) -> pd.DataFrame:
+    """
+    Coerce DataFrame columns to the canonical FuelSync schema dtypes.
+
+    Args:
+        transaction_dataframe: DataFrame produced by to_dataframe() before dtype normalization.
+
+    Returns:
+        A new DataFrame with dtype conversions applied (does not mutate input).
+
+    Side Effects:
+        None.
+
+    Raises:
+        None. (Uses safe coercion; unexpected values become missing.)
+    """
+    coerced_dataframe: pd.DataFrame = transaction_dataframe.copy()
+
+    # Apply datetime conversion to columns
+    for column_name in DATETIME_COLUMNS:
+        if column_name in coerced_dataframe.columns:
+            coerced_dataframe[column_name] = pd.to_datetime(
+                coerced_dataframe[column_name], utc=True
+            )
+
+    for column_name in FLOAT64_COLUMNS:
+        if column_name in coerced_dataframe.columns:
+            coerced_dataframe[column_name] = pd.to_numeric(
+                coerced_dataframe[column_name], errors='coerce'
+            ).astype(pd.Float64Dtype())
+
+    for column_name in INT64_COLUMNS:
+        if column_name in coerced_dataframe.columns:
+            coerced_dataframe[column_name] = pd.to_numeric(
+                coerced_dataframe[column_name], errors='coerce'
+            ).astype(pd.Int64Dtype())
+
+    for column_name in STRING_COLUMNS:
+        if column_name in coerced_dataframe.columns:
+            coerced_dataframe[column_name] = coerced_dataframe[column_name].astype(
+                pd.StringDtype()
+            )
+
+    return coerced_dataframe
+
+
 # --- Nested Response Models ---
 
 
@@ -206,6 +438,83 @@ class WSTransactionInfo(BaseModel):
         return f'WSTransactionInfo(type={self.info_type}, value={self.info_value})'
 
 
+class ExtractedInfoFields(BaseModel):
+    """
+    Typed container for info fields extracted from WSTransactionInfo list.
+
+    Applies proper type coercion to fields that should be numeric,
+    ensuring 'null' strings and whitespace are converted to None.
+    """
+
+    model_config = ConfigDict(extra='ignore')
+
+    unit: str | None = None
+    vehicle_type: str | None = None
+    odometer: int | None = None
+    driver_name: str | None = None
+    class_code: int | None = None
+    branch_code: int | None = None
+    gl_code: str | None = None
+    business_id: int | None = None
+    driver_id: int | None = None
+    region: int | None = None
+
+    @field_validator(
+        'odometer',
+        'class_code',
+        'branch_code',
+        'business_id',
+        'driver_id',
+        'region',
+        mode='before',
+    )
+    @classmethod
+    def _coerce_int_fields(cls, raw_value: Any) -> int | None:
+        return _coerce_optional_int(raw_value)
+
+    @field_validator('unit', 'vehicle_type', 'driver_name', 'gl_code', mode='before')
+    @classmethod
+    def _normalize_string_fields(cls, raw_value: Any) -> str | None:
+        normalized: Any = _normalize_null_like_value(raw_value)
+        if normalized is None:
+            return None
+        return str(normalized).strip() or None
+
+    @classmethod
+    def from_info_list(cls, infos: list[WSTransactionInfo]) -> Self:
+        """
+        Build typed info fields from raw WSTransactionInfo list.
+
+        Args:
+            infos: List of key-value info pairs from transaction.
+
+        Returns:
+            ExtractedInfoFields with proper type coercion applied.
+        """
+        # Build lookup dict: API field code -> raw value
+        raw_lookup: dict[str, str | None] = {
+            info.info_type: info.info_value
+            for info in infos
+            if info.info_type is not None
+        }
+
+        # Map API codes to model field names
+        field_data: dict[str, Any] = {
+            'unit': raw_lookup.get('UNIT'),
+            'vehicle_type': raw_lookup.get('VHTP'),
+            'odometer': raw_lookup.get('ODRD'),
+            'driver_name': raw_lookup.get('NAME'),
+            'class_code': raw_lookup.get('CLCD'),
+            'branch_code': raw_lookup.get('LCCD'),
+            'gl_code': raw_lookup.get('CNTN'),
+            'business_id': raw_lookup.get('BLID'),
+            'driver_id': raw_lookup.get('DRID'),
+            'region': raw_lookup.get('DMLC'),
+        }
+
+        return cls.model_validate(field_data)
+
+
 class WSTransTaxes(BaseModel):
     """
     Represents a single tax line item within a main line item.
@@ -269,6 +578,20 @@ class WSTransactionLineItemExt(BaseModel):
     use_type: int | None = Field(None, alias='useType')
 
     line_taxes: list[WSTransTaxes] = Field(default_factory=list, alias='lineTaxes')
+
+    @field_validator(
+        'billing_flag',
+        'fuel_type',
+        'group_number',
+        'line_number',
+        'number',
+        'service_type',
+        'use_type',
+        mode='before',
+    )
+    @classmethod
+    def _coerce_int(cls, raw_value: Any) -> int | None:
+        return _coerce_optional_int(raw_value)
 
     def __repr__(self) -> str:
         return (
@@ -362,8 +685,8 @@ class WSMCTransExtLocV2(BaseModel):
     location_state: str | None = Field(None, alias='locationState')
     location_zip: str | None = Field(None, alias='locationZip')
     location_address: str | None = Field(None, alias='locationAddress')
-    location_longitude: str | None = Field(None, alias='locationLongitude')
-    location_latitude: str | None = Field(None, alias='locationLatitude')
+    location_longitude: float | None = Field(None, alias='locationLongitude')
+    location_latitude: float | None = Field(None, alias='locationLatitude')
     message_dlvd: str | None = Field(None, alias='messageDLVD')
     meta_data: list[WSMetaData] = Field(default_factory=list, alias='metaData')
     net_total: float | None = Field(None, alias='netTotal')
@@ -388,8 +711,32 @@ class WSMCTransExtLocV2(BaseModel):
     transaction_type: int | None = Field(None, alias='transactionType')
     trans_taxes: list[WSTransTaxes] = Field(default_factory=list, alias='transTaxes')
 
+    @field_validator('location_latitude', 'location_longitude', mode='before')
     @classmethod
-    def from_xml_element(cls, element: etree.Element) -> 'WSMCTransExtLocV2':
+    def _coerce_float(cls, raw_value: Any) -> float | None:
+        return _coerce_optional_float(raw_value)
+
+    @field_validator(
+        'ar_batch_number',
+        'billing_country',
+        'carrier_id',
+        'country',
+        'issuer_id',
+        'location_chain_id',
+        'location_country',
+        'location_id',
+        'original_trans_id',
+        'settle_id',
+        'statement_id',
+        'supplier_id',
+        mode='before',
+    )
+    @classmethod
+    def _coerce_int(cls, raw_value: Any) -> int | None:
+        return _coerce_optional_int(raw_value)
+
+    @classmethod
+    def from_xml_element(cls, element: etree.Element) -> Self:
         """
         Parse a <value> XML element into a WSMCTransExtLocV2 instance.
 
@@ -524,16 +871,11 @@ class GetMCTransExtLocV2Response(BaseModel):
                 for field_name, col_name in TRANSACTION_FIELD_MAP.items()
             }
 
-            # Extract info values using list comprehension
-            info_dict: dict[str | None, str | None] = {
-                info.info_type: info.info_value for info in t.infos
-            }
-            trans_data.update(
-                {
-                    col_name: info_dict.get(info_type)
-                    for info_type, col_name in INFO_FIELD_MAP.items()
-                }
+            # Extract and type-coerce info fields via Pydantic model
+            extracted_info: ExtractedInfoFields = ExtractedInfoFields.from_info_list(
+                t.infos
             )
+            trans_data.update(extracted_info.model_dump())
 
             # Add line item count
             trans_data['line_item_count'] = len(t.line_items)
@@ -588,14 +930,12 @@ class GetMCTransExtLocV2Response(BaseModel):
         # Build DataFrame
         df = pd.DataFrame(rows)
 
-        # Apply datetime conversion to columns
-        for col in datetime_cols:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col], utc=True).dt.tz_localize(None)
-
         # Apply fuel type name mapping to column
         if 'fuel_type' in df.columns:
             df['fuel_type_name'] = df['fuel_type'].map(FUEL_TYPE_MAP)
+
+        # Normalize DataFrame schema to canonical FuelSync types
+        df: pd.DataFrame = _coerce_dataframe_schema(df)
 
         return df
 
