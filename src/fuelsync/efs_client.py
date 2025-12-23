@@ -243,7 +243,7 @@ class EfsClient:
         """
         try:
             logger.debug(
-                'Sending SOAP request to %r (timeout=%ds)',
+                'Sending SOAP request to %r (connect/read timeout=%r)',
                 self.config.efs.endpoint_url,
                 self.config.client.request_timeout,
             )
@@ -279,7 +279,7 @@ class EfsClient:
 
         except requests.exceptions.Timeout as timeout_error:
             logger.error(
-                'Request timeout for operation %r after %ds: %r',
+                'Request timeout for operation %r after %r: %r',
                 operation_name,
                 self.config.client.request_timeout,
                 timeout_error,
