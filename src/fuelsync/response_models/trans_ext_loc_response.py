@@ -32,7 +32,10 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 # --- Module-level constants ---
 # Wex sends the string 'null'
-_NULL_TOKEN_PATTERN: re.Pattern[str] = re.compile(r'^\s*(null)?\s*$', re.IGNORECASE)
+_NULL_TOKEN_PATTERN: re.Pattern[str] = re.compile(
+    r'^\s*(?:null|add\s*value)?\s*$',
+    re.IGNORECASE,
+)
 
 DATETIME_COLUMNS: list[str] = ['transaction_date', 'pos_date']
 
@@ -68,7 +71,6 @@ INT64_COLUMNS: list[str] = [
     'branch_code',
     'business_id',
     'driver_id',
-    'region',
 ]
 
 STRING_COLUMNS: list[str] = [
@@ -89,6 +91,7 @@ STRING_COLUMNS: list[str] = [
     'gl_code',
     'category',
     'fuel_type_name',
+    'region',
 ]
 
 
@@ -457,7 +460,7 @@ class ExtractedInfoFields(BaseModel):
     gl_code: str | None = None
     business_id: int | None = None
     driver_id: int | None = None
-    region: int | None = None
+    region: str | None = None
 
     @field_validator(
         'odometer',
@@ -465,14 +468,15 @@ class ExtractedInfoFields(BaseModel):
         'branch_code',
         'business_id',
         'driver_id',
-        'region',
         mode='before',
     )
     @classmethod
     def _coerce_int_fields(cls, raw_value: Any) -> int | None:
         return _coerce_optional_int(raw_value)
 
-    @field_validator('unit', 'vehicle_type', 'driver_name', 'gl_code', mode='before')
+    @field_validator(
+        'unit', 'vehicle_type', 'driver_name', 'gl_code', 'region', mode='before'
+    )
     @classmethod
     def _normalize_string_fields(cls, raw_value: Any) -> str | None:
         normalized: Any = _normalize_null_like_value(raw_value)
